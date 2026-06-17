@@ -1,0 +1,76 @@
+{
+  "name": "hvac-erp",
+  "version": "1.0.0",
+  "description": "Offline desktop ERP for HVAC contracting businesses",
+  "main": "dist-electron/main.js",
+  "author": "HVAC ERP",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsc --project tsconfig.electron.json && concurrently \"npm run vite:dev\" \"npm run electron:dev\"",
+    "vite:dev": "vite",
+    "electron:dev": "wait-on http://localhost:5173 && electron .",
+    "build": "npm run compile && npm run vite:build && npm run electron:build",
+    "compile": "tsc --project tsconfig.electron.json && shx cp electron/database/*.sql dist-electron/database/ && tsc --project tsconfig.json",
+    "rebuild": "electron-builder install-app-deps",
+    "postinstall": "electron-builder install-app-deps",
+    "vite:build": "vite build",
+    "electron:build": "electron-builder",
+    "preview": "vite preview",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^11.5.0",
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.9.3",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.49",
+    "shx": "^0.4.0",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "wait-on": "^9.0.10"
+  },
+  "build": {
+    "appId": "com.hvacerp.app",
+    "productName": "HVAC ERP",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "node_modules/better-sqlite3/**/*",
+      "!node_modules/better-sqlite3/build/Release/obj.target/**/*",
+      "!node_modules/better-sqlite3/build/Release/.deps/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    }
+  }
+}
