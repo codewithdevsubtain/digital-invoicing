@@ -1,4 +1,4 @@
-import type { AppSettings, ActivityLog, User, Vendor, VendorLedger, Customer, CustomerLedger, Project } from './types.js'
+import type { AppSettings, ActivityLog, User, Vendor, VendorLedger, Customer, CustomerLedger, Project, Unit, ItemCategory, Warehouse, ItemWithStock, ItemDetail, StockPerWarehouse, StockLevelRow, StockMovementWithBalance, LowStockItem, StockMovementRow, PurchaseOrderRow, PurchaseOrderDetail, PurchaseInvoiceRow, PurchaseInvoiceDetail, VendorPaymentRow, VendorPaymentDetail, OutstandingInvoice, BOMRow, BOMDetail, BOMCostEstimate, FabricationOrderRow, FabricationOrderDetail, ProjectRow, ProjectMaterialIssuedRow, ProjectMaterialReturnRow, ProjectLaborRow, ProjectProfitability } from './types.js'
 
 declare global {
   interface Window {
@@ -138,18 +138,180 @@ export const api = {
     projects: (userId: number, id: number) => invoke<Project[]>('customers:projects', userId, id),
   },
   inventory: {
-    list: () => invoke<unknown[]>('inventory:list'),
-    get: (id: number) => invoke<unknown | null>('inventory:get', id),
-    create: (data: unknown) => invoke<unknown>('inventory:create', data),
-    update: (id: number, data: unknown) => invoke<unknown>('inventory:update', id, data),
-    delete: (id: number) => invoke<unknown>('inventory:delete', id),
+    // Units
+    listUnits: () => invoke<Unit[]>('inventory:listUnits'),
+    createUnit: (userId: number, data: { name: string; short_code: string }) =>
+      invoke<{ id: number | bigint }>('inventory:createUnit', userId, data),
+    updateUnit: (userId: number, id: number, data: { name?: string; short_code?: string }) =>
+      invoke<boolean>('inventory:updateUnit', userId, id, data),
+    deleteUnit: (userId: number, id: number) => invoke<boolean>('inventory:deleteUnit', userId, id),
+
+    // Categories
+    listCategories: () => invoke<ItemCategory[]>('inventory:listCategories'),
+    createCategory: (userId: number, data: { name: string; parent_id?: number | null; item_type?: string | null }) =>
+      invoke<{ id: number | bigint }>('inventory:createCategory', userId, data),
+    updateCategory: (userId: number, id: number, data: { name?: string; parent_id?: number | null; item_type?: string | null }) =>
+      invoke<boolean>('inventory:updateCategory', userId, id, data),
+    deleteCategory: (userId: number, id: number) => invoke<boolean>('inventory:deleteCategory', userId, id),
+
+    // Warehouses
+    listWarehouses: () => invoke<Warehouse[]>('inventory:listWarehouses'),
+    createWarehouse: (userId: number, data: { name: string; location?: string }) =>
+      invoke<{ id: number | bigint }>('inventory:createWarehouse', userId, data),
+    updateWarehouse: (userId: number, id: number, data: { name?: string; location?: string }) =>
+      invoke<boolean>('inventory:updateWarehouse', userId, id, data),
+    toggleWarehouse: (userId: number, id: number) =>
+      invoke<{ is_active: number }>('inventory:toggleWarehouse', userId, id),
+
+    // Items
+    listItems: (userId: number, filters?: { item_type?: string; category_id?: number; search?: string; low_stock_only?: boolean; is_active?: boolean | null }) =>
+      invoke<ItemWithStock[]>('inventory:listItems', userId, filters),
+    getItem: (userId: number, id: number) =>
+      invoke<ItemDetail | null>('inventory:getItem', userId, id),
+    createItem: (userId: number, data: { name: string; category_id?: number; item_type: string; unit_id?: number; reorder_level?: number; standard_cost?: number; standard_sale_price?: number; hsn_code?: string; description?: string }) =>
+      invoke<{ id: number | bigint; item_code: string }>('inventory:createItem', userId, data),
+    updateItem: (userId: number, id: number, data: { name?: string; category_id?: number; item_type?: string; unit_id?: number; reorder_level?: number; standard_cost?: number; standard_sale_price?: number; hsn_code?: string; description?: string }) =>
+      invoke<boolean>('inventory:updateItem', userId, id, data),
+    toggleItem: (userId: number, id: number) =>
+      invoke<{ is_active: number }>('inventory:toggleItem', userId, id),
+
+    // Stock
+    getItemStock: (userId: number, itemId: number) =>
+      invoke<{ per_warehouse: StockPerWarehouse[]; total: number }>('inventory:getItemStock', userId, itemId),
+    getAllStockLevels: (userId: number, filters?: { item_type?: string; warehouse_id?: number; below_reorder_only?: boolean }) =>
+      invoke<StockLevelRow[]>('inventory:getAllStockLevels', userId, filters),
+    getItemStockHistory: (userId: number, itemId: number, filters?: { warehouse_id?: number; date_from?: string; date_to?: string }) =>
+      invoke<StockMovementWithBalance[]>('inventory:getItemStockHistory', userId, itemId, filters),
+    adjustStock: (userId: number, data: { item_id: number; warehouse_id: number; quantity: number; type: 'adjustment_in' | 'adjustment_out'; reason?: string; date: string }) =>
+      invoke<boolean>('inventory:adjustStock', userId, data),
+    getLowStockItems: () => invoke<LowStockItem[]>('inventory:getLowStockItems'),
+    listAllStockMovements: (userId: number, filters?: { item_id?: number; warehouse_id?: number; movement_type?: string; date_from?: string; date_to?: string; reference_type?: string }) =>
+      invoke<StockMovementRow[]>('inventory:listAllStockMovements', userId, filters),
+  },
+  purchases: {
+    // Purchase Orders
+    po: {
+      create: (userId: number, data: { vendor_id: number; date: string; notes?: string; items: Array<{ item_id: number; quantity: number; rate: number }> }) =>
+        invoke<{ id: number | bigint; po_number: string }>('po:create', userId, data),
+      list: (userId: number, filters?: { vendor_id?: number; status?: string; date_from?: string; date_to?: string }) =>
+        invoke<PurchaseOrderRow[]>('po:list', userId, filters),
+      getById: (userId: number, id: number) =>
+        invoke<PurchaseOrderDetail | null>('po:getById', userId, id),
+      update: (userId: number, id: number, data: { vendor_id?: number; date?: string; notes?: string; status?: string; items?: Array<{ item_id: number; quantity: number; rate: number }> }) =>
+        invoke<boolean>('po:update', userId, id, data),
+      updateStatus: (userId: number, id: number, status: string) =>
+        invoke<boolean>('po:updateStatus', userId, id, status),
+      delete: (userId: number, id: number) => invoke<boolean>('po:delete', userId, id),
+    },
+    // Purchase Invoices
+    pi: {
+      create: (userId: number, data: {
+        vendor_id: number; vendor_invoice_no?: string; date: string; warehouse_id: number
+        purchase_order_id?: number; notes?: string
+        discount_percent?: number; gst_percent?: number; withholding_tax_percent?: number; other_charges?: number
+        items: Array<{ item_id: number; quantity: number; rate: number; discount_percent?: number; gst_percent?: number }>
+      }) => invoke<{ id: number | bigint; invoice_number: string }>('pi:create', userId, data),
+      list: (userId: number, filters?: { vendor_id?: number; payment_status?: string; date_from?: string; date_to?: string }) =>
+        invoke<PurchaseInvoiceRow[]>('pi:list', userId, filters),
+      getById: (userId: number, id: number) =>
+        invoke<PurchaseInvoiceDetail | null>('pi:getById', userId, id),
+      void: (userId: number, id: number, reason: string) =>
+        invoke<boolean>('pi:void', userId, id, reason),
+      getOutstanding: (userId: number, vendorId: number) =>
+        invoke<OutstandingInvoice[]>('pi:getOutstanding', userId, vendorId),
+    },
+    // Vendor Payments
+    payment: {
+      record: (userId: number, data: {
+        vendor_id: number; date: string; amount: number
+        payment_method: string; bank_account_id?: number; reference_no?: string; notes?: string
+        allocations: Array<{ purchase_invoice_id: number; amount: number }>
+      }) => invoke<{ id: number | bigint; payment_number: string }>('payment:record', userId, data),
+      list: (userId: number, filters?: { vendor_id?: number; date_from?: string; date_to?: string }) =>
+        invoke<VendorPaymentRow[]>('payment:list', userId, filters),
+      getById: (userId: number, id: number) =>
+        invoke<VendorPaymentDetail | null>('payment:getById', userId, id),
+    },
+  },
+  fabrication: {
+    bom: {
+      create: (userId: number, data: {
+        finished_item_id: number; name: string; output_quantity: number
+        labor_cost_estimate?: number; overhead_cost_estimate?: number; notes?: string
+        components: Array<{ raw_material_item_id: number; quantity_required: number; wastage_percent?: number }>
+      }) => invoke<{ id: number | bigint }>('bom:create', userId, data),
+      list: (userId: number, filters?: { finished_item_id?: number }) =>
+        invoke<BOMRow[]>('bom:list', userId, filters),
+      getById: (userId: number, id: number) =>
+        invoke<BOMDetail | null>('bom:getById', userId, id),
+      update: (userId: number, id: number, data: {
+        name?: string; output_quantity?: number
+        labor_cost_estimate?: number; overhead_cost_estimate?: number; notes?: string
+        components?: Array<{ raw_material_item_id: number; quantity_required: number; wastage_percent?: number }>
+      }) => invoke<boolean>('bom:update', userId, id, data),
+      deactivate: (userId: number, id: number) =>
+        invoke<{ is_active: number }>('bom:deactivate', userId, id),
+      costEstimate: (userId: number, id: number) =>
+        invoke<BOMCostEstimate>('bom:costEstimate', userId, id),
+    },
+    fab: {
+      create: (userId: number, data: { bom_id: number; quantity_to_produce: number; warehouse_id: number; date_started?: string; notes?: string }) =>
+        invoke<{ id: number | bigint; fab_order_number: string }>('fab:create', userId, data),
+      list: (userId: number, filters?: { status?: string; date_from?: string; date_to?: string; finished_item_id?: number }) =>
+        invoke<FabricationOrderRow[]>('fab:list', userId, filters),
+      getById: (userId: number, id: number) =>
+        invoke<FabricationOrderDetail | null>('fab:getById', userId, id),
+      start: (userId: number, id: number, overrideLowStock?: boolean) =>
+        invoke<{ success?: boolean; error?: string; details?: string[] }>('fab:start', userId, id, overrideLowStock),
+      complete: (userId: number, id: number, data: { quantity_produced: number; actual_labor_cost?: number; actual_overhead_cost?: number; materials?: Array<{ id: number; quantity_consumed: number }> }) =>
+        invoke<{ total_fabrication_cost: number; cost_per_unit: number }>('fab:complete', userId, id, data),
+      cancel: (userId: number, id: number) => invoke<boolean>('fab:cancel', userId, id),
+    },
   },
   projects: {
-    list: () => invoke<unknown[]>('projects:list'),
-    get: (id: number) => invoke<unknown | null>('projects:get', id),
-    create: (data: unknown) => invoke<unknown>('projects:create', data),
-    update: (id: number, data: unknown) => invoke<unknown>('projects:update', id, data),
-    delete: (id: number) => invoke<unknown>('projects:delete', id),
+    list: (userId: number, filters?: { customer_id?: number; status?: string; search?: string; date_from?: string; date_to?: string }) =>
+      invoke<ProjectRow[]>('projects:list', userId, filters),
+    get: (userId: number, id: number) =>
+      invoke<(Project & { customer_name: string | null }) | null>('projects:get', userId, id),
+    create: (userId: number, data: {
+      project_name: string; customer_id?: number; site_address?: string; description?: string
+      start_date?: string; expected_end_date?: string; contract_value?: number; status?: string
+    }) => invoke<{ id: number | bigint; project_code: string }>('projects:create', userId, data),
+    update: (userId: number, id: number, data: Record<string, unknown>) => invoke<boolean>('projects:update', userId, id, data),
+    updateStatus: (userId: number, id: number, status: string) => invoke<boolean>('projects:updateStatus', userId, id, status),
+
+    // Materials
+    issueMaterial: (userId: number, data: {
+      project_id: number; item_id: number; warehouse_id: number; quantity: number
+      date: string; issued_to?: string; notes?: string; override_low_stock?: boolean
+    }) => invoke<{ success?: boolean; error?: string; message?: string; unit_cost?: number; total_cost?: number }>('projects:issueMaterial', userId, data),
+    returnMaterial: (userId: number, data: {
+      project_id: number; item_id: number; warehouse_id: number; quantity: number; date: string; notes?: string
+    }) => invoke<boolean>('projects:returnMaterial', userId, data),
+    getMaterials: (userId: number, projectId: number) =>
+      invoke<{ issued: ProjectMaterialIssuedRow[]; returns: ProjectMaterialReturnRow[]; issued_total: number; net_cost: number }>('projects:getMaterials', userId, projectId),
+
+    // Labor
+    addLaborCost: (userId: number, data: {
+      project_id: number; employee_id?: number; date: string
+      hours_worked?: number; rate_per_hour?: number; daily_wage_amount?: number; description?: string
+    }) => invoke<{ id: number | bigint }>('projects:addLaborCost', userId, data),
+    getLaborCosts: (userId: number, projectId: number) =>
+      invoke<{ rows: ProjectLaborRow[]; total: number }>('projects:getLaborCosts', userId, projectId),
+
+    // Expenses
+    addExpense: (userId: number, data: {
+      project_id: number; expense_category: string; description?: string; amount: number; date: string
+      paid_via?: string; bank_account_id?: number
+    }) => invoke<{ id: number | bigint }>('projects:addExpense', userId, data),
+    getExpenses: (userId: number, projectId: number) =>
+      invoke<{ rows: any[]; total: number }>('projects:getExpenses', userId, projectId),
+
+    // Profitability
+    profitability: (userId: number, projectId: number) =>
+      invoke<ProjectProfitability>('projects:profitability', userId, projectId),
+    summary: (userId: number) =>
+      invoke<{ active_projects: number; total_contract_value: number; total_revenue_invoiced: number }>('projects:summary', userId),
   },
   invoices: {
     list: () => invoke<unknown[]>('invoices:list'),

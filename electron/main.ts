@@ -14,6 +14,8 @@ import { registerInvoiceHandlers } from './ipc/invoices.js'
 import { registerAccountingHandlers } from './ipc/accounting.js'
 import { registerHRHandlers } from './ipc/hr.js'
 import { registerReportHandlers } from './ipc/reports.js'
+import { registerPurchaseHandlers } from './ipc/purchases.js'
+import { registerFabricationHandlers } from './ipc/fabrication.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -70,6 +72,8 @@ app.whenReady().then(async () => {
     registerAccountingHandlers()
     registerHRHandlers()
     registerReportHandlers()
+    registerPurchaseHandlers()
+    registerFabricationHandlers()
     createWindow()
   } catch (err) {
     console.error('Failed to initialize app:', err)

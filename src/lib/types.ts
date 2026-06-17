@@ -196,6 +196,166 @@ export interface StockMovement {
   created_at: string
 }
 
+// Extended types for inventory module
+
+export interface ItemWithStock extends Item {
+  unit_name: string | null
+  unit_short_code: string | null
+  category_name: string | null
+  current_stock: number
+}
+
+export interface ItemDetail extends Item {
+  unit_name: string | null
+  unit_short_code: string | null
+  category_name: string | null
+}
+
+export interface StockPerWarehouse {
+  id: number
+  item_id: number
+  warehouse_id: number
+  quantity_on_hand: number
+  average_cost: number
+  updated_at: string
+  warehouse_name: string
+}
+
+export interface StockLevelRow {
+  id: number
+  item_code: string | null
+  name: string
+  item_type: string
+  reorder_level: number
+  standard_cost: number
+  avg_cost: number
+  unit_id: number | null
+  unit_name: string | null
+  unit_short_code: string | null
+  warehouse_id: number
+  warehouse_name: string
+  quantity_on_hand: number
+  average_cost: number
+}
+
+export interface StockMovementWithBalance extends StockMovement {
+  warehouse_name: string
+  created_by_name: string | null
+  running_balance: number
+}
+
+export interface LowStockItem {
+  id: number
+  item_code: string | null
+  name: string
+  item_type: string
+  reorder_level: number
+  is_active: number
+  unit_name: string | null
+  unit_short_code: string | null
+  current_stock: number
+}
+
+export interface StockMovementRow extends StockMovement {
+  item_code: string | null
+  item_name: string
+  warehouse_name: string
+  created_by_name: string | null
+}
+
+// =====================================================================
+// FABRICATION UI TYPES
+// =====================================================================
+export interface BOMRow {
+  id: number
+  finished_item_id: number
+  name: string
+  output_quantity: number
+  labor_cost_estimate: number
+  overhead_cost_estimate: number
+  notes: string | null
+  is_active: number
+  created_at: string
+  finished_item_name: string
+  finished_item_code: string | null
+}
+
+export interface BOMDetail extends BOMRow {
+  unit_id: number | null
+  unit_short_code: string | null
+  components: BOMComponentRow[]
+}
+
+export interface BOMComponentRow {
+  id: number
+  bom_id: number
+  raw_material_item_id: number
+  quantity_required: number
+  wastage_percent: number
+  raw_material_name: string
+  raw_material_code: string | null
+  unit_short_code: string | null
+  current_avg_cost: number
+}
+
+export interface BOMCostEstimate {
+  material_cost: number
+  labor_cost: number
+  overhead_cost: number
+  total_cost: number
+  cost_per_unit: number
+  details: Array<{
+    raw_material_item_id: number
+    quantity_required: number
+    wastage_percent: number
+    current_avg_cost: number
+    qty_with_waste: number
+    line_cost: number
+  }>
+}
+
+export interface FabricationOrderRow {
+  id: number
+  fab_order_number: string
+  bom_id: number
+  finished_item_id: number
+  quantity_to_produce: number
+  quantity_produced: number
+  warehouse_id: number
+  date_started: string | null
+  date_completed: string | null
+  status: string
+  actual_labor_cost: number
+  actual_overhead_cost: number
+  total_material_cost: number
+  total_fabrication_cost: number
+  cost_per_unit: number
+  notes: string | null
+  created_by: number | null
+  created_at: string
+  finished_item_name: string
+  finished_item_code: string | null
+  bom_name: string
+  warehouse_name: string
+}
+
+export interface FabricationOrderMaterialRow {
+  id: number
+  fabrication_order_id: number
+  raw_material_item_id: number
+  quantity_consumed: number
+  unit_cost: number
+  total_cost: number
+  raw_material_name: string
+  raw_material_code: string | null
+  unit_short_code: string | null
+  current_stock: number
+}
+
+export interface FabricationOrderDetail extends FabricationOrderRow {
+  materials: FabricationOrderMaterialRow[]
+}
+
 // =====================================================================
 // PURCHASES
 // =====================================================================
@@ -223,6 +383,14 @@ export interface PurchaseOrderItem {
   amount: number
 }
 
+export interface PurchaseOrderRow extends PurchaseOrder {
+  vendor_name: string
+}
+
+export interface PurchaseOrderDetail extends PurchaseOrderRow {
+  items: (PurchaseOrderItem & { item_name: string; item_code: string })[]
+}
+
 export interface PurchaseInvoice {
   id: number
   invoice_number: string
@@ -230,16 +398,33 @@ export interface PurchaseInvoice {
   vendor_invoice_no: string | null
   date: string
   purchase_order_id: number | null
+  warehouse_id: number | null
   subtotal: number
+  discount_percent: number
   discount: number
+  gst_percent: number
   gst_amount: number
+  withholding_tax_percent: number
   withholding_tax_amount: number
   other_charges: number
   total_amount: number
+  amount_paid: number
   payment_status: PaymentStatus
+  is_voided: number
+  void_reason: string | null
+  voided_at: string | null
   notes: string | null
   created_by: number | null
   created_at: string
+}
+
+export interface PurchaseInvoiceRow extends PurchaseInvoice {
+  vendor_name: string
+  balance_due: number
+}
+
+export interface PurchaseInvoiceDetail extends PurchaseInvoiceRow {
+  items: (PurchaseInvoiceItem & { item_name: string; item_code: string; unit_short_code: string | null })[]
 }
 
 export interface PurchaseInvoiceItem {
@@ -268,6 +453,25 @@ export interface VendorPayment {
   created_by: number | null
   created_at: string
 }
+
+export interface VendorPaymentRow extends VendorPayment {
+  vendor_name: string
+}
+
+export interface VendorPaymentDetail extends VendorPaymentRow {
+  allocations: { id: number; payment_id: number; purchase_invoice_id: number; amount: number; invoice_number: string }[]
+}
+
+export interface OutstandingInvoice {
+  id: number
+  invoice_number: string
+  date: string
+  total_amount: number
+  amount_paid: number
+  balance_due: number
+}
+
+// Original purchase types kept for backward compat
 
 // =====================================================================
 // FABRICATION / BOM
@@ -397,6 +601,45 @@ export interface ProjectOtherExpense {
   bank_account_id: number | null
   created_by: number | null
   created_at: string
+}
+
+// =====================================================================
+// PROJECTS UI TYPES
+// =====================================================================
+export interface ProjectRow extends Project {
+  customer_name: string | null
+  revenue_invoiced: number
+  total_material_cost: number
+  total_labor_cost: number
+  total_other_expenses: number
+}
+
+export interface ProjectMaterialIssuedRow extends ProjectMaterialIssued {
+  item_name: string
+  item_code: string | null
+  unit_short_code: string | null
+  warehouse_name: string
+}
+
+export interface ProjectMaterialReturnRow extends ProjectMaterialReturn {
+  item_name: string
+  item_code: string | null
+  unit_short_code: string | null
+  warehouse_name: string
+}
+
+export interface ProjectLaborRow extends ProjectLaborCost {
+  employee_name: string | null
+}
+
+export interface ProjectProfitability {
+  revenue: number
+  material_cost: number
+  labor_cost: number
+  other_expenses: number
+  total_costs: number
+  gross_profit: number
+  profit_margin_percent: number
 }
 
 // =====================================================================

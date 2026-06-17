@@ -33,6 +33,49 @@ function applyMigrations(_db: Database.Database) {
   if (!hasColumn('users', 'updated_at')) {
     _db.exec('ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP')
   }
+  if (!hasColumn('item_categories', 'item_type')) {
+    _db.exec("ALTER TABLE item_categories ADD COLUMN item_type TEXT DEFAULT NULL")
+  }
+  if (!hasColumn('purchase_invoices', 'warehouse_id')) {
+    _db.exec('ALTER TABLE purchase_invoices ADD COLUMN warehouse_id INTEGER DEFAULT NULL REFERENCES warehouses(id) ON DELETE SET NULL')
+  }
+  if (!hasColumn('purchase_invoices', 'discount_percent')) {
+    _db.exec('ALTER TABLE purchase_invoices ADD COLUMN discount_percent REAL DEFAULT 0')
+  }
+  if (!hasColumn('purchase_invoices', 'gst_percent')) {
+    _db.exec('ALTER TABLE purchase_invoices ADD COLUMN gst_percent REAL DEFAULT 0')
+  }
+  if (!hasColumn('purchase_invoices', 'withholding_tax_percent')) {
+    _db.exec('ALTER TABLE purchase_invoices ADD COLUMN withholding_tax_percent REAL DEFAULT 0')
+  }
+  if (!hasColumn('purchase_invoices', 'amount_paid')) {
+    _db.exec('ALTER TABLE purchase_invoices ADD COLUMN amount_paid REAL DEFAULT 0')
+  }
+  if (!hasColumn('purchase_invoices', 'is_voided')) {
+    _db.exec('ALTER TABLE purchase_invoices ADD COLUMN is_voided INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!hasColumn('purchase_invoices', 'void_reason')) {
+    _db.exec('ALTER TABLE purchase_invoices ADD COLUMN void_reason TEXT DEFAULT NULL')
+  }
+  if (!hasColumn('purchase_invoices', 'voided_at')) {
+    _db.exec('ALTER TABLE purchase_invoices ADD COLUMN voided_at DATETIME DEFAULT NULL')
+  }
+  // Create payment allocations table if not exists
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS vendor_payment_allocations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      payment_id INTEGER NOT NULL,
+      purchase_invoice_id INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      FOREIGN KEY (payment_id) REFERENCES vendor_payments(id) ON DELETE CASCADE,
+      FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE RESTRICT
+    )
+  `)
+  // Add GST Input account if missing
+  const coaCount = (_db.prepare("SELECT COUNT(*) as c FROM chart_of_accounts WHERE account_code = '1505'").get() as { c: number }).c
+  if (coaCount === 0) {
+    _db.prepare("INSERT INTO chart_of_accounts (account_code, account_name, account_type, parent_id, is_active) VALUES ('1505', 'GST Input Receivable', 'asset', NULL, 1)").run()
+  }
 }
 
 function loadSqlFile(filename: string): string {

@@ -250,7 +250,7 @@ export function registerVendorHandlers() {
 
       const sql = `
         SELECT vl.*,
-          COALESCE(pi.invoice_no, vp.payment_no) AS reference_no,
+          COALESCE(pi.invoice_number, vp.payment_number) AS reference_no,
           SUM(vl.debit - vl.credit) OVER (ORDER BY vl.date, vl.id) AS running_balance
         FROM vendor_ledger vl
         LEFT JOIN purchase_invoices pi ON vl.reference_type = 'purchase_invoice' AND vl.reference_id = pi.id

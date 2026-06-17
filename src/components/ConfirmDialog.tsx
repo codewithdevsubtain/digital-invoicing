@@ -7,6 +7,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string
   cancelLabel?: string
   destructive?: boolean
+  extraContent?: React.ReactNode
 }
 
 export default function ConfirmDialog({
@@ -18,6 +19,7 @@ export default function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   destructive = false,
+  extraContent,
 }: ConfirmDialogProps) {
   if (!open) return null
 
@@ -26,6 +28,7 @@ export default function ConfirmDialog({
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         <p className="mt-2 text-sm text-gray-600">{message}</p>
+        {extraContent && <div className="mt-3">{extraContent}</div>}
         <div className="mt-6 flex justify-end gap-3">
           <button onClick={onCancel} className="btn-secondary">
             {cancelLabel}

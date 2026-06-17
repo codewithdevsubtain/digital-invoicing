@@ -15,6 +15,7 @@ import Purchases from './pages/Purchases/Purchases.js'
 import Fabrication from './pages/Fabrication/Fabrication.js'
 import StockMovements from './pages/Inventory/StockMovements.js'
 import Projects from './pages/Projects/Projects.js'
+import ProjectDetail from './pages/Projects/ProjectDetail.js'
 import Invoices from './pages/Invoices/Invoices.js'
 import Expenses from './pages/Expenses/Expenses.js'
 import HRPayroll from './pages/HR/HRPayroll.js'
@@ -80,6 +81,7 @@ function App() {
         <Route path="fabrication" element={<Fabrication />} />
         <Route path="stock-movements" element={<StockMovements />} />
         <Route path="projects" element={<Projects />} />
+        <Route path="projects/:id" element={<ProjectDetail />} />
         <Route path="invoices" element={<Invoices />} />
         <Route path="expenses" element={<Expenses />} />
         <Route path="hr-payroll" element={<HRPayroll />} />
