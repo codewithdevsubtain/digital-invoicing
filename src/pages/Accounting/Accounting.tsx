@@ -236,7 +236,7 @@ ${html}
                               </td>
                               <td className="py-2">
                                 <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                                  <button onClick={() => { setEditingCoa(a); setCoaForm({ ...a, parent_id: a.parent_id ?? '' as string | number }); setShowCoaModal(true) }} className="rounded p-1 text-gray-400 hover:text-gray-600"><Pencil size={14} /></button>
+                                  <button onClick={() => { setEditingCoa(a); setCoaForm({ account_code: a.account_code ?? '', account_name: a.account_name, account_type: a.account_type, parent_id: a.parent_id ?? '' }); setShowCoaModal(true) }} className="rounded p-1 text-gray-400 hover:text-gray-600"><Pencil size={14} /></button>
                                   <button onClick={() => setTogglingCoa(a)} className="rounded p-1 text-gray-400 hover:text-gray-600">{a.is_active ? <PowerOff size={14} /> : <Power size={14} />}</button>
                                 </div>
                               </td>
