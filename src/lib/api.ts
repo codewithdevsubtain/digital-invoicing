@@ -1,4 +1,4 @@
-import type { AppSettings, ActivityLog, User, Vendor, VendorLedger, Customer, CustomerLedger, Project, Unit, ItemCategory, Warehouse, ItemWithStock, ItemDetail, StockPerWarehouse, StockLevelRow, StockMovementWithBalance, LowStockItem, StockMovementRow, PurchaseOrderRow, PurchaseOrderDetail, PurchaseInvoiceRow, PurchaseInvoiceDetail, VendorPaymentRow, VendorPaymentDetail, OutstandingInvoice, BOMRow, BOMDetail, BOMCostEstimate, FabricationOrderRow, FabricationOrderDetail, ProjectRow, ProjectMaterialIssuedRow, ProjectMaterialReturnRow, ProjectLaborRow, ProjectProfitability } from './types.js'
+import type { AppSettings, ActivityLog, User, Vendor, VendorLedger, Customer, CustomerLedger, Project, Unit, ItemCategory, Warehouse, ItemWithStock, ItemDetail, StockPerWarehouse, StockLevelRow, StockMovementWithBalance, LowStockItem, StockMovementRow, PurchaseOrderRow, PurchaseOrderDetail, PurchaseInvoiceRow, PurchaseInvoiceDetail, VendorPaymentRow, VendorPaymentDetail, OutstandingInvoice, BOMRow, BOMDetail, BOMCostEstimate, FabricationOrderRow, FabricationOrderDetail, ProjectRow, ProjectMaterialIssuedRow, ProjectMaterialReturnRow, ProjectLaborRow, ProjectProfitability, SalesInvoiceRow, SalesInvoiceDetail, CustomerReceiptRow, ExpenseCategory, Employee, AttendanceSummary, SalaryPreview, PayrollPreviewRow, EmployeeAdvanceRow, SalaryPaymentRow, AttendanceRow, BankAccount, CashAccount, CashBankTransaction, COARow, JournalEntryRow, LedgerRow, TrialBalanceRow, PnLStatement, BalanceSheetData, StockMovement } from './types.js'
 
 declare global {
   interface Window {
@@ -313,28 +313,174 @@ export const api = {
     summary: (userId: number) =>
       invoke<{ active_projects: number; total_contract_value: number; total_revenue_invoiced: number }>('projects:summary', userId),
   },
-  invoices: {
-    list: () => invoke<unknown[]>('invoices:list'),
-    get: (id: number) => invoke<unknown | null>('invoices:get', id),
-    create: (data: unknown) => invoke<unknown>('invoices:create', data),
-    update: (id: number, data: unknown) => invoke<unknown>('invoices:update', id, data),
-    delete: (id: number) => invoke<unknown>('invoices:delete', id),
+  sales: {
+    list: (userId: number, filters?: { customer_id?: number; project_id?: number; payment_status?: string; date_from?: string; date_to?: string }) =>
+      invoke<SalesInvoiceRow[]>('sales:list', userId, filters),
+    getById: (userId: number, id: number) =>
+      invoke<SalesInvoiceDetail | null>('sales:getById', userId, id),
+    create: (userId: number, data: {
+      customer_id: number; project_id?: number; date: string
+      discount_percent?: number; discount_amount?: number
+      further_tax_percent?: number; withholding_tax_percent?: number; notes?: string
+      items: Array<{
+        item_id?: number; description: string; quantity: number; unit?: string; rate: number; gst_percent?: number
+      }>
+    }) => invoke<{ id: number | bigint; invoice_number: string; grand_total: number; withholding_tax_amount: number }>('sales:create', userId, data),
+    void: (userId: number, id: number, reason: string) =>
+      invoke<boolean>('sales:void', userId, id, reason),
+    projectMaterials: (userId: number, projectId: number) =>
+      invoke<Array<{ item_id: number; quantity_issued: number; unit_cost: number; item_name: string; item_code: string | null; unit_short_code: string | null }>>('sales:projectMaterials', userId, projectId),
+  },
+  receipts: {
+    record: (userId: number, data: {
+      customer_id: number; sales_invoice_id: number; date: string; amount: number
+      payment_method: string; bank_account_id?: number; reference_no?: string; notes?: string
+      withholding_tax_deducted?: number
+    }) => invoke<{ id: number | bigint; receipt_number: string }>('receipt:record', userId, data),
+    list: (userId: number, filters?: { customer_id?: number; sales_invoice_id?: number; date_from?: string; date_to?: string }) =>
+      invoke<CustomerReceiptRow[]>('receipt:list', userId, filters),
+  },
+  expenses: {
+    categories: {
+      list: () => invoke<(ExpenseCategory & { account_code: string | null; account_name: string | null })[]>('expenses:categories:list'),
+      create: (userId: number, data: { name: string; type: string; account_id?: number }) =>
+        invoke<{ id: number | bigint }>('expenses:categories:create', userId, data),
+      update: (userId: number, id: number, data: { name?: string; type?: string; account_id?: number | null }) =>
+        invoke<boolean>('expenses:categories:update', userId, id, data),
+    },
+    list: (userId: number, filters?: { category_id?: number; date_from?: string; date_to?: string; paid_via?: string }) =>
+      invoke<(any)[]>('expenses:list', userId, filters),
+    get: (userId: number, id: number) => invoke<any | null>('expenses:get', userId, id),
+    create: (userId: number, data: {
+      category_id: number; description?: string; amount: number; date: string; paid_via: string; bank_account_id?: number
+    }) => invoke<{ id: number | bigint; expense_number: string }>('expenses:create', userId, data),
+    update: (userId: number, id: number, data: {
+      category_id?: number; description?: string; amount?: number; date?: string; paid_via?: string; bank_account_id?: number | null
+    }) => invoke<boolean>('expenses:update', userId, id, data),
+    delete: (userId: number, id: number) => invoke<boolean>('expenses:delete', userId, id),
+    summary: (userId: number, data?: { date_from?: string; date_to?: string }) =>
+      invoke<{ total: number; by_category: Array<{ id: number; name: string; type: string; total: number }> }>('expenses:summary', userId, data),
+  },
+  cashbank: {
+    bank: {
+      list: () => invoke<BankAccount[]>('cashbank:bank:list'),
+      create: (userId: number, data: { account_name: string; bank_name?: string; account_number?: string; branch?: string; opening_balance?: number }) =>
+        invoke<{ id: number | bigint }>('cashbank:bank:create', userId, data),
+      update: (userId: number, id: number, data: Record<string, unknown>) => invoke<boolean>('cashbank:bank:update', userId, id, data),
+      toggleActive: (userId: number, id: number) => invoke<{ is_active: number }>('cashbank:bank:toggleActive', userId, id),
+    },
+    cash: {
+      list: () => invoke<CashAccount[]>('cashbank:cash:list'),
+      create: (userId: number, data: { account_name: string; opening_balance?: number }) =>
+        invoke<{ id: number | bigint }>('cashbank:cash:create', userId, data),
+      update: (userId: number, id: number, data: Record<string, unknown>) => invoke<boolean>('cashbank:cash:update', userId, id, data),
+      toggleActive: (userId: number, id: number) => invoke<{ is_active: number }>('cashbank:cash:toggleActive', userId, id),
+    },
+    transactions: (userId: number, data: { account_type: string; account_id: number; date_from?: string; date_to?: string }) =>
+      invoke<CashBankTransaction[]>('cashbank:transactions', userId, data),
+    balances: () => invoke<{
+      cash: CashAccount[]; bank: BankAccount[]; total_cash_position: number
+    }>('cashbank:balances'),
+    manualTransaction: (userId: number, data: {
+      account_type: string; account_id: number; date: string; transaction_type: string
+      amount: number; description?: string; category?: string
+    }) => invoke<boolean>('cashbank:manualTransaction', userId, data),
+    transfer: (userId: number, data: {
+      from_type: string; from_id: number; to_type: string; to_id: number
+      amount: number; date: string; description?: string
+    }) => invoke<boolean>('cashbank:transfer', userId, data),
   },
   accounting: {
-    list: () => invoke<unknown[]>('accounting:list'),
-    get: (id: number) => invoke<unknown | null>('accounting:get', id),
-    create: (data: unknown) => invoke<unknown>('accounting:create', data),
-    update: (id: number, data: unknown) => invoke<unknown>('accounting:update', id, data),
-    delete: (id: number) => invoke<unknown>('accounting:delete', id),
+    coa: {
+      list: () => invoke<COARow[]>('acc:coa:list'),
+      create: (userId: number, data: { account_code: string; account_name: string; account_type: string; parent_id?: number }) =>
+        invoke<{ id: number | bigint }>('acc:coa:create', userId, data),
+      update: (userId: number, id: number, data: { account_name?: string; account_type?: string; parent_id?: number | null }) =>
+        invoke<boolean>('acc:coa:update', userId, id, data),
+      toggleActive: (userId: number, id: number) => invoke<{ is_active: number }>('acc:coa:toggleActive', userId, id),
+    },
+    journal: {
+      list: (userId: number, filters?: { date_from?: string; date_to?: string; account_id?: number; reference_type?: string }) =>
+        invoke<JournalEntryRow[]>('acc:journal:list', userId, filters),
+      create: (userId: number, data: { date: string; description: string; lines: Array<{ account_id: number; debit: number; credit: number; description?: string }> }) =>
+        invoke<{ id: number | bigint; entry_number: string }>('acc:journal:create', userId, data),
+    },
+    ledger: (userId: number, data: { account_id: number; date_from?: string; date_to?: string }) =>
+      invoke<LedgerRow[]>('acc:ledger', userId, data),
+    trialBalance: (userId: number, asOfDate: string) =>
+      invoke<{ rows: TrialBalanceRow[]; total_debit: number; total_credit: number }>('acc:trialBalance', userId, asOfDate),
+    pnl: (userId: number, data: { date_from: string; date_to: string }) =>
+      invoke<PnLStatement>('acc:pnl', userId, data),
+    balanceSheet: (userId: number, asOfDate: string) =>
+      invoke<BalanceSheetData>('acc:balanceSheet', userId, asOfDate),
   },
   hr: {
-    list: () => invoke<unknown[]>('hr:list'),
-    get: (id: number) => invoke<unknown | null>('hr:get', id),
-    create: (data: unknown) => invoke<unknown>('hr:create', data),
-    update: (id: number, data: unknown) => invoke<unknown>('hr:update', id, data),
-    delete: (id: number) => invoke<unknown>('hr:delete', id),
+    employees: {
+      list: (userId: number, filters?: { designation?: string; is_active?: boolean | null }) =>
+        invoke<Employee[]>('hr:employees:list', userId, filters),
+      get: (userId: number, id: number) => invoke<Employee | null>('hr:employees:get', userId, id),
+      create: (userId: number, data: {
+        full_name: string; designation: string; phone?: string; cnic?: string; address?: string
+        joining_date?: string; salary_type: string; monthly_salary?: number; daily_rate?: number
+      }) => invoke<{ id: number | bigint; employee_code: string }>('hr:employees:create', userId, data),
+      update: (userId: number, id: number, data: Record<string, unknown>) => invoke<boolean>('hr:employees:update', userId, id, data),
+      toggleActive: (userId: number, id: number) => invoke<{ is_active: number }>('hr:employees:toggleActive', userId, id),
+    },
+    attendance: {
+      mark: (userId: number, data: { employee_id: number; date: string; status: string; overtime_hours?: number; notes?: string }) =>
+        invoke<boolean>('hr:attendance:mark', userId, data),
+      bulkMark: (userId: number, data: { date: string; entries: Array<{ employee_id: number; status: string; overtime_hours?: number }> }) =>
+        invoke<boolean>('hr:attendance:bulkMark', userId, data),
+      list: (userId: number, filters: { employee_id?: number; date_from?: string; date_to?: string }) =>
+        invoke<AttendanceRow[]>('hr:attendance:list', userId, filters),
+      summary: (userId: number, data: { employee_id: number; month: string; year: number }) =>
+        invoke<AttendanceSummary>('hr:attendance:summary', userId, data),
+    },
+    salary: {
+      preview: (userId: number, data: { employee_id: number; month: string; year: number }) =>
+        invoke<SalaryPreview>('hr:salary:preview', userId, data),
+      create: (userId: number, data: {
+        employee_id: number; month: string; year: number; basic_salary: number; days_present: number
+        overtime_amount: number; deductions: number; advance_deduction: number; net_salary: number
+        payment_date: string; paid_via: string; bank_account_id?: number
+      }) => invoke<{ id: number | bigint }>('hr:salary:create', userId, data),
+      list: (userId: number, filters?: { employee_id?: number; month?: string; year?: number }) =>
+        invoke<SalaryPaymentRow[]>('hr:salary:list', userId, filters),
+    },
+    payroll: {
+      preview: (userId: number, data: { month: string; year: number }) =>
+        invoke<PayrollPreviewRow[]>('hr:payroll:preview', userId, data),
+    },
+    advances: {
+      give: (userId: number, data: { employee_id: number; date: string; amount: number; reason?: string }) =>
+        invoke<{ id: number | bigint }>('hr:advances:give', userId, data),
+      list: (userId: number, filters?: { employee_id?: number; status?: string }) =>
+        invoke<EmployeeAdvanceRow[]>('hr:advances:list', userId, filters),
+    },
   },
   reports: {
-    run: (name: string, params?: Record<string, unknown>) => invoke<unknown>('reports:run', name, params),
+    projectProfitability: (userId: number, filters?: { date_from?: string; date_to?: string; status?: string }) =>
+      invoke<{ rows: any[]; totals: any }>('reports:projectProfitability', userId, filters),
+    receivablesAging: (userId: number, asOfDate: string) =>
+      invoke<Array<{ id: number; name: string; total_outstanding: number; current: number; age31_60: number; age61_90: number; age90plus: number }>>('reports:receivablesAging', userId, asOfDate),
+    payablesAging: (userId: number, asOfDate: string) =>
+      invoke<Array<{ id: number; name: string; total_outstanding: number; current: number; age31_60: number; age61_90: number; age90plus: number }>>('reports:payablesAging', userId, asOfDate),
+    inventoryValuation: (userId: number, asOfDate: string, warehouse_id?: number) =>
+      invoke<{ rows: Array<{ id: number; item_code: string; name: string; item_type: string; category_name: string | null; quantity: number; avg_cost: number; total_value: number }>; grand_total: number }>('reports:inventoryValuation', userId, asOfDate, warehouse_id),
+    movement: (userId: number, filters: { item_id?: number; date_from: string; date_to: string }) =>
+      invoke<StockMovement[]>('reports:movement', userId, filters),
+    lowStock: () => invoke<any[]>('reports:lowStock'),
+    salesTax: (userId: number, data: { date_from: string; date_to: string }) =>
+      invoke<{ rows: Array<{ month: string; total_sales: number; gst_collected: number; further_tax: number; total_output_tax: number; total_purchases: number; gst_paid: number; net_payable: number }>; totals: { total_sales: number; total_output_tax: number; total_purchases: number; total_input_tax: number; net_payable: number } }>('reports:salesTax', userId, data),
+    wht: (userId: number, data: { date_from: string; date_to: string }) =>
+      invoke<{ rows: Array<{ month: string; wht_receivable: number; wht_payable: number; net_position: number }> }>('reports:wht', userId, data),
+    expenseBreakdown: (userId: number, data: { date_from: string; date_to: string }) =>
+      invoke<{ rows: Array<{ category: string; type: string; total: number; pct: number }>; grand_total: number }>('reports:expenseBreakdown', userId, data),
+    employeeCost: (userId: number, data: { month: string; year: number }) =>
+      invoke<Array<{ employee_id: number; employee_name: string; designation: string; salary: number; project_labor: number; total_cost: number }>>('reports:employeeCost', userId, data),
+    dashboard: (userId: number, data?: { date_from?: string; date_to?: string }) =>
+      invoke<any>('reports:dashboard', userId, data),
+    exportCSV: (userId: number, data: { defaultName: string; headers: string[]; rows: string[][] }) =>
+      invoke<boolean>('reports:exportCSV', userId, data),
   },
 }

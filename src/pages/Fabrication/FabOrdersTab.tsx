@@ -133,6 +133,7 @@ export default function FabOrdersTab() {
     setCompletingId(id)
     try {
       const d = await api.fabrication.fab.getById(user.id, id)
+      if (!d) { addToast({ type: 'error', title: 'Error', message: 'Order not found' }); return }
       setCompleteForm({
         quantity_produced: String(d.quantity_to_produce),
         actual_labor_cost: String(d.actual_labor_cost || '0'),

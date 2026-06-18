@@ -74,16 +74,14 @@ export default function ProjectDetail() {
   const loadRefs = useCallback(async () => {
     if (!user) return
     try {
-      const [w, i, e, b] = await Promise.all([
+      const [w, i, e] = await Promise.all([
         api.inventory.listWarehouses().then((wh) => wh.filter((x) => x.is_active)),
         api.inventory.listItems(user.id, { is_active: true }),
-        user ? api.hr.list().catch(() => []) : [],
-        user ? api.accounting.list().catch(() => []) : [],
+        api.hr.employees.list(user.id, { is_active: true }).catch(() => []),
       ])
-      setWarehouses(w.map((x) => ({ value: x.id, label: x.name })))
-      setItems(i.map((x) => ({ value: x.id, label: `${x.item_code ?? ''} - ${x.name}` })))
+      setWarehouses(w.map((x: any) => ({ value: x.id, label: x.name })))
+      setItems(i.map((x: any) => ({ value: x.id, label: `${x.item_code ?? ''} - ${x.name}` })))
       setEmployees((Array.isArray(e) ? e : []).map((x: any) => ({ value: x.id, label: x.full_name ?? `Employee #${x.id}` })))
-      setBankAccounts((Array.isArray(b) ? b : []).map((x: any) => ({ value: x.id, label: x.account_name ?? `Bank #${x.id}` })))
     } catch { /* ignore */ }
   }, [user])
 

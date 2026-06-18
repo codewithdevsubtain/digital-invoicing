@@ -269,7 +269,7 @@ function registerItemHandlers() {
     }))
 
     if (filters?.low_stock_only) {
-      result = result.filter((item) => (item.current_stock as number) < (item.reorder_level as number))
+      result = result.filter((item: any) => (item.current_stock as number) < (item.reorder_level as number))
     }
 
     return result

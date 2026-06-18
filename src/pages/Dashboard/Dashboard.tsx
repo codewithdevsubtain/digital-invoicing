@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Factory, Users, CreditCard, Wallet, AlertTriangle, Package } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Factory, Users, CreditCard, Wallet, AlertTriangle, Landmark, TrendingUp, Activity } from 'lucide-react'
 import { api } from '../../lib/api.js'
 import { useAuthStore } from '../../store/authStore.js'
 import { formatCurrency } from '../../lib/format.js'
@@ -7,12 +8,16 @@ import type { LowStockItem } from '../../lib/types.js'
 
 export default function Dashboard() {
   const { user } = useAuthStore()
+  const navigate = useNavigate()
   const [payables, setPayables] = useState(0)
   const [vendorCount, setVendorCount] = useState(0)
   const [receivables, setReceivables] = useState(0)
   const [overdueCustomers, setOverdueCustomers] = useState(0)
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([])
-  const [activeProjects, setActiveProjects] = useState(0)
+  const [cashBalance, setCashBalance] = useState(0)
+  const [dashData, setDashData] = useState<any>(null)
+  const [activeProjectList, setActiveProjectList] = useState<any[]>([])
+  const [recentActivity, setRecentActivity] = useState<any[]>([])
 
   useEffect(() => {
     if (!user) return
@@ -25,9 +30,11 @@ export default function Dashboard() {
       setOverdueCustomers(s.overdueCount)
     }).catch(() => {})
     api.inventory.getLowStockItems().then(setLowStockItems).catch(() => {})
-    // Attempt to load active projects count (will fail silently if not implemented yet)
-    api.projects.list().then((p: unknown) => {
-      if (Array.isArray(p)) setActiveProjects(p.length)
+    api.cashbank.balances().then((b) => setCashBalance(b.total_cash_position)).catch(() => {})
+    api.reports.dashboard(user.id).then((d) => {
+      setDashData(d)
+      setActiveProjectList(d.active_projects ?? [])
+      setRecentActivity(d.recent_activity ?? [])
     }).catch(() => {})
   }, [user])
 
@@ -76,12 +83,21 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="card flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-50 text-green-600">
+            <Landmark size={24} />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Cash Position</p>
+            <p className="text-xl font-bold text-gray-900">{formatCurrency(cashBalance)}</p>
+          </div>
+        </div>
+        <div className="card flex items-center gap-4 opacity-60">
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
             <Factory size={24} />
           </div>
           <div>
             <p className="text-sm text-gray-500">Active Projects</p>
-            <p className="text-xl font-bold text-gray-900">{activeProjects}</p>
+            <p className="text-xl font-bold text-gray-900">{activeProjectList.length}</p>
           </div>
         </div>
       </div>
@@ -140,12 +156,56 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="mt-8 flex flex-col items-center justify-center rounded-xl bg-white py-24 text-center shadow-sm ring-1 ring-gray-200">
-        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-navy-50 text-navy-800">
-          <Factory size={40} />
+      {/* Active Projects + Top Projects + Recent Activity */}
+      <div className="mt-6 grid gap-6 md:grid-cols-2">
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Factory size={16} /> Active Projects ({activeProjectList.length})</h3>
+            <button onClick={() => navigate('/projects')} className="text-xs text-navy-600 hover:underline">View All</button>
+          </div>
+          <div className="space-y-2">
+            {activeProjectList.slice(0, 8).map((p: any) => (
+              <div key={p.id} className="flex items-center justify-between text-sm cursor-pointer hover:bg-gray-50 rounded px-2 py-1" onClick={() => navigate(`/projects/${p.id}`)}>
+                <span className="font-medium">{p.project_name}</span>
+                <span className="text-xs rounded-full bg-blue-50 text-blue-700 px-2 py-0.5">{p.status.replace('_', ' ')}</span>
+              </div>
+            ))}
+            {activeProjectList.length === 0 && <p className="text-xs text-gray-400">No active projects</p>}
+          </div>
         </div>
-        <h2 className="text-2xl font-bold text-gray-900">HVAC ERP</h2>
-        <p className="mt-2 text-gray-500">More dashboard modules will be added as they are built.</p>
+
+        <div className="card p-4">
+          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 mb-3"><TrendingUp size={16} /> Top Projects by Profit</h3>
+          {dashData?.top_projects?.length > 0 ? (
+            <div className="space-y-2">
+              {dashData.top_projects.slice(0, 5).map((p: any) => (
+                <div key={p.id} className="flex items-center justify-between text-sm cursor-pointer hover:bg-gray-50 rounded px-2 py-1" onClick={() => navigate(`/projects/${p.id}`)}>
+                  <div>
+                    <p className="font-medium">{p.project_name}</p>
+                    <p className="text-xs text-gray-400">{p.project_code}</p>
+                  </div>
+                  <span className={`font-medium ${p.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(p.profit)}</span>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-xs text-gray-400">No project data yet</p>}
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="mt-6 card p-4">
+        <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 mb-3"><Activity size={16} /> Recent Activity</h3>
+        <div className="max-h-48 overflow-y-auto space-y-1">
+          {recentActivity.slice(0, 15).map((a: any) => (
+            <div key={a.id} className="flex items-center gap-3 text-xs py-1.5 border-b border-gray-50 last:border-0">
+              <span className="text-gray-400 w-32 shrink-0">{new Date(a.timestamp).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              <span className="text-gray-500 w-16 shrink-0">{a.user_name ?? 'System'}</span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs">{a.module}</span>
+              <span className="text-gray-700">{a.details}</span>
+            </div>
+          ))}
+          {recentActivity.length === 0 && <p className="text-xs text-gray-400 text-center py-4">No recent activity</p>}
+        </div>
       </div>
     </div>
   )

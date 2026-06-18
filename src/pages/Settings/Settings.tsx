@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Save, Upload, Building2, Users, ScrollText, Package } from 'lucide-react'
+import { Save, Upload, Building2, Users, ScrollText, Package, HardDrive } from 'lucide-react'
 import PageHeader from '../../components/PageHeader.js'
 import Loading from '../../components/Loading.js'
 import { useSettingsStore } from '../../store/settingsStore.js'
@@ -8,6 +8,7 @@ import { useToastStore } from '../../store/toastStore.js'
 import UsersTab from './UsersTab.js'
 import ActivityLogTab from './ActivityLogTab.js'
 import InventorySetupTab from './InventorySetupTab.js'
+import DataManagementTab from './DataManagementTab.js'
 
 const months = [
   { value: '1', label: 'January' },
@@ -28,6 +29,7 @@ const tabs = [
   { id: 'company', label: 'Company', icon: Building2 },
   { id: 'users', label: 'Users', icon: Users, adminOnly: true },
   { id: 'inventory', label: 'Inventory Setup', icon: Package, adminOnly: true },
+  { id: 'data', label: 'Data Management', icon: HardDrive, adminOnly: true },
   { id: 'activity', label: 'Activity Log', icon: ScrollText, adminOnly: true },
 ]
 
@@ -288,6 +290,7 @@ export default function Settings() {
 
         {activeTab === 'users' && <UsersTab />}
         {activeTab === 'inventory' && <InventorySetupTab />}
+        {activeTab === 'data' && <DataManagementTab />}
         {activeTab === 'activity' && <ActivityLogTab />}
       </div>
     </div>

@@ -125,6 +125,7 @@ export interface ItemCategory {
   name: string
   parent_id: number | null
   created_at: string
+  item_type?: string | null
 }
 
 export interface Unit {
@@ -701,6 +702,24 @@ export interface CustomerReceipt {
   created_at: string
 }
 
+// Sales invoice UI types
+export interface SalesInvoiceRow extends SalesInvoice {
+  customer_name: string
+  customer_address: string | null
+  customer_ntn: string | null
+  customer_strn: string | null
+  project_name: string | null
+}
+
+export interface SalesInvoiceDetail extends SalesInvoiceRow {
+  items: (SalesInvoiceItem & { item_code: string | null })[]
+}
+
+export interface CustomerReceiptRow extends CustomerReceipt {
+  customer_name: string
+  invoice_number: string
+}
+
 // =====================================================================
 // EXPENSES
 // =====================================================================
@@ -711,6 +730,9 @@ export interface ExpenseCategory {
   id: number
   name: string
   type: ExpenseCategoryType
+  account_id: number | null
+  account_code: string | null
+  account_name: string | null
 }
 
 export interface CompanyExpense {
@@ -790,6 +812,137 @@ export interface EmployeeAdvance {
   status: AdvanceStatus
   created_by: number | null
   created_at: string
+}
+
+// HR UI types
+export interface EmployeeRow extends Employee {
+  // Fields from Employee are already sufficient
+}
+
+export interface AttendanceRow extends Attendance {
+  employee_name: string
+  designation: string
+}
+
+export interface AttendanceSummary {
+  present: number
+  absent: number
+  half_day: number
+  leave: number
+  holiday: number
+  total_overtime_hours: number
+  days_in_month: number
+  days_present_equivalent: number
+}
+
+export interface SalaryPreview {
+  employee_id: number
+  salary_type: string
+  days_present_equivalent: number
+  days_in_month: number
+  basic_salary: number
+  overtime_hours: number
+  overtime_amount: number
+  pending_advances: number
+  gross_pay: number
+}
+
+export interface SalaryPaymentRow extends SalaryPayment {
+  employee_name: string
+  designation: string
+}
+
+export interface PayrollPreviewRow {
+  employee_id: number
+  employee_name: string
+  employee_code: string | null
+  designation: string
+  salary_type: string
+  days_present_equivalent: number
+  basic_salary: number
+  overtime_hours: number
+  overtime_amount: number
+  pending_advances: number
+  already_paid: boolean
+  gross_pay: number
+}
+
+export interface EmployeeAdvanceRow extends EmployeeAdvance {
+  employee_name: string
+  employee_code: string | null
+}
+
+// =====================================================================
+// ACCOUNTING UI TYPES
+// =====================================================================
+export interface COARow extends ChartOfAccount {
+  has_transactions: boolean
+}
+
+export interface JournalEntryRow extends JournalEntry {
+  created_by_name: string | null
+  lines: (JournalEntryLine & { account_code: string; account_name: string; account_type: string })[]
+}
+
+export interface LedgerRow {
+  id: number
+  journal_entry_id: number
+  account_id: number
+  debit: number
+  credit: number
+  description: string | null
+  date: string
+  entry_number: string
+  je_description: string | null
+  reference_type: string | null
+  reference_id: number | null
+  account_code: string
+  account_name: string
+  running_balance: number
+}
+
+export interface TrialBalanceRow {
+  id: number
+  account_code: string
+  account_name: string
+  account_type: string
+  total_debit: number
+  total_credit: number
+  closing_debit: number
+  closing_credit: number
+}
+
+export interface PnLRow {
+  account_code: string
+  account_name: string
+  account_type: string
+  balance: number
+}
+
+export interface PnLStatement {
+  income: PnLRow[]
+  expenses: PnLRow[]
+  total_income: number
+  total_expenses: number
+  net_profit: number
+}
+
+export interface BalanceSheetRow {
+  account_code: string
+  account_name: string
+  account_type: string
+  balance: number
+}
+
+export interface BalanceSheetData {
+  assets: BalanceSheetRow[]
+  liabilities: BalanceSheetRow[]
+  equity: BalanceSheetRow[]
+  net_profit: number
+  total_assets: number
+  total_liabilities: number
+  total_equity: number
+  total_liabilities_equity: number
 }
 
 // =====================================================================

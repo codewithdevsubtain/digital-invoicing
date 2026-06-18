@@ -13,7 +13,7 @@ import SearchableSelect from '../../components/SearchableSelect.js'
 import StatusBadge from '../../components/StatusBadge.js'
 import type { ItemWithStock, ItemDetail, Unit, ItemCategory, Warehouse, StockPerWarehouse, StockMovementWithBalance } from '../../lib/types.js'
 
-const emptyForm = { name: '', category_id: '' as string | number, unit_id: '' as string | number, reorder_level: '', standard_cost: '', standard_sale_price: '', hsn_code: '', description: '', item_type: 'finished_good' as const }
+const emptyForm = { name: '', category_id: '' as string | number, unit_id: '' as string | number, reorder_level: '', standard_cost: '', standard_sale_price: '', hsn_code: '', description: '', item_type: 'finished_good' as 'finished_good' | 'fabricated' }
 
 export default function FinishedGoods() {
   const { user } = useAuthStore()

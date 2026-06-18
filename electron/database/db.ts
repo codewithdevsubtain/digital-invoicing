@@ -76,6 +76,29 @@ function applyMigrations(_db: Database.Database) {
   if (coaCount === 0) {
     _db.prepare("INSERT INTO chart_of_accounts (account_code, account_name, account_type, parent_id, is_active) VALUES ('1505', 'GST Input Receivable', 'asset', NULL, 1)").run()
   }
+  // Add sales_invoices void columns
+  if (!hasColumn('sales_invoices', 'is_voided')) {
+    _db.exec('ALTER TABLE sales_invoices ADD COLUMN is_voided INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!hasColumn('sales_invoices', 'void_reason')) {
+    _db.exec('ALTER TABLE sales_invoices ADD COLUMN void_reason TEXT DEFAULT NULL')
+  }
+  if (!hasColumn('sales_invoices', 'voided_at')) {
+    _db.exec('ALTER TABLE sales_invoices ADD COLUMN voided_at DATETIME DEFAULT NULL')
+  }
+  // Add withholding_tax_deducted to customer_receipts
+  if (!hasColumn('customer_receipts', 'withholding_tax_deducted')) {
+    _db.exec('ALTER TABLE customer_receipts ADD COLUMN withholding_tax_deducted REAL DEFAULT 0')
+  }
+  // Add Further Tax Payable account
+  const ftCount = (_db.prepare("SELECT COUNT(*) as c FROM chart_of_accounts WHERE account_code = '2105'").get() as { c: number }).c
+  if (ftCount === 0) {
+    _db.prepare("INSERT INTO chart_of_accounts (account_code, account_name, account_type, parent_id, is_active) VALUES ('2105', 'Further Tax Payable', 'liability', NULL, 1)").run()
+  }
+  // Add account_id to expense_categories for GL mapping
+  if (!hasColumn('expense_categories', 'account_id')) {
+    _db.exec('ALTER TABLE expense_categories ADD COLUMN account_id INTEGER DEFAULT NULL REFERENCES chart_of_accounts(id) ON DELETE SET NULL')
+  }
 }
 
 function loadSqlFile(filename: string): string {
@@ -237,6 +260,30 @@ export function runRaw<T>(sql: string, params: unknown[] = []): T {
 export function runTransaction<T>(callback: () => T): T {
   const transaction = getDb().transaction(callback)
   return transaction()
+}
+
+// Shared helper for recording cash/bank transactions (used by purchases, sales, expenses, payroll, transfers)
+export function recordCashBankTransaction(
+  accountType: 'cash' | 'bank',
+  accountId: number,
+  date: string,
+  transactionType: 'receipt' | 'payment' | 'transfer_in' | 'transfer_out',
+  amount: number,
+  referenceType: string | null,
+  referenceId: number | null,
+  description: string | null,
+  userId: number
+): void {
+  getDb().prepare(`
+    INSERT INTO cash_bank_transactions (account_type, account_id, date, transaction_type, amount, reference_type, reference_id, description, balance_after, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(accountType, accountId, date, transactionType, amount, referenceType, referenceId, description, amount, userId)
+
+  if (transactionType === 'receipt' || transactionType === 'transfer_in') {
+    getDb().prepare(`UPDATE ${accountType}_accounts SET current_balance = current_balance + ? WHERE id = ?`).run(amount, accountId)
+  } else {
+    getDb().prepare(`UPDATE ${accountType}_accounts SET current_balance = current_balance - ? WHERE id = ?`).run(amount, accountId)
+  }
 }
 
 // =====================================================================

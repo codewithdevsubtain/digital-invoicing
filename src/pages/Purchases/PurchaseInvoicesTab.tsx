@@ -16,6 +16,7 @@ const emptyHeader = {
   vendor_id: '' as string | number, vendor_invoice_no: '', date: new Date().toISOString().split('T')[0],
   warehouse_id: '' as string | number, purchase_order_id: '' as string | number,
   discount_percent: '', withholding_tax_percent: '', other_charges: '', notes: '',
+  gst_percent: '',
 }
 const emptyLine = { item_id: '' as string | number, quantity: '', rate: '', discount_percent: '', gst_percent: '' }
 

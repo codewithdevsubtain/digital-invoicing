@@ -8,7 +8,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsc --project tsconfig.electron.json && concurrently \"npm run vite:dev\" \"npm run electron:dev\"",
+    "dev": "tsc --project tsconfig.electron.json && shx cp electron/database/*.sql dist-electron/database/ && concurrently \"npm run vite:dev\" \"npm run electron:dev\"",
     "vite:dev": "vite",
     "electron:dev": "wait-on http://localhost:5173 && electron .",
     "build": "npm run compile && npm run vite:build && npm run electron:build",
