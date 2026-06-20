@@ -48,6 +48,8 @@ export default function HRPayroll() {
   const [deductions, setDeductions] = useState<Record<number, string>>({})
   const [advDeducts, setAdvDeducts] = useState<Record<number, string>>({})
   const [payMethodGlobal, setPayMethodGlobal] = useState('cash')
+  const [payBankAccountId, setPayBankAccountId] = useState('' as string | number)
+  const [bankAccounts, setBankAccounts] = useState<Array<{ value: string | number; label: string }>>([])
   const [salaryHistory, setSalaryHistory] = useState<any[]>([])
   const [showSalaryHistory, setShowSalaryHistory] = useState(false)
   const [showPayslip, setShowPayslip] = useState<any>(null)
@@ -66,6 +68,13 @@ export default function HRPayroll() {
   }, [user, designationFilter, addToast])
 
   useEffect(() => { loadEmps() }, [loadEmps])
+
+  useEffect(() => {
+    if (!user) return
+    api.cashbank.bank.list().then((banks) => {
+      setBankAccounts(banks.filter((b) => b.is_active).map((b) => ({ value: b.id, label: `${b.bank_name} - ${b.account_number}` })))
+    }).catch(() => {})
+  }, [user])
 
   // ============== EMPLOYEE HANDLERS ==============
   const handleEmpSubmit = async () => {
@@ -165,6 +174,10 @@ export default function HRPayroll() {
 
   const processPayroll = async () => {
     if (!user) return
+    if (payMethodGlobal === 'bank' && !payBankAccountId) {
+      addToast({ type: 'warning', title: 'Validation', message: 'Select a bank account for bank payments' })
+      return
+    }
     try {
       for (const emp of payrollPreview) {
         if (emp.already_paid) continue
@@ -179,6 +192,7 @@ export default function HRPayroll() {
           basic_salary: basicSalary, days_present: emp.days_present_equivalent,
           overtime_amount: otAmt, deductions: ded, advance_deduction: advDed, net_salary: netSalary,
           payment_date: new Date().toISOString().split('T')[0], paid_via: payMethodGlobal,
+          bank_account_id: payMethodGlobal === 'bank' ? Number(payBankAccountId) : undefined,
         })
       }
       addToast({ type: 'success', title: 'Payroll Processed', message: 'Salaries processed successfully' })
@@ -401,6 +415,14 @@ export default function HRPayroll() {
                   <option value="cash">Cash</option>
                   <option value="bank">Bank</option>
                 </select>
+                {payMethodGlobal === 'bank' && (
+                  <SearchableSelect
+                    options={bankAccounts}
+                    value={payBankAccountId}
+                    onChange={setPayBankAccountId}
+                    placeholder="Bank account"
+                  />
+                )}
               </div>
               <button onClick={() => setShowSalaryHistory(!showSalaryHistory)} className="btn-secondary text-sm ml-auto">{showSalaryHistory ? 'Show Payroll' : 'Salary History'}</button>
             </div>

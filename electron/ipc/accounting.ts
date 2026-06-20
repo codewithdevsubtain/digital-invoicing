@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
 import { getDb, logActivity, runTransaction } from '../database/db.js'
+import { assertAuth } from './guard.js'
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function round2(n: number): number {
@@ -36,10 +36,10 @@ function registerCOAHandlers() {
     return result
   })
 
-  ipcMain.handle('acc:coa:create', async (_event, userId: number, data: {
+  ipcMain.handle('acc:coa:create', async (_event, token: string, userId: number, data: {
     account_code: string; account_name: string; account_type: string; parent_id?: number
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     if (!data.account_code || !data.account_name) throw new Error('Code and name are required')
     try {
       const result = getDb().prepare(`
@@ -53,10 +53,10 @@ function registerCOAHandlers() {
     }
   })
 
-  ipcMain.handle('acc:coa:update', async (_event, userId: number, id: number, data: {
+  ipcMain.handle('acc:coa:update', async (_event, token: string, userId: number, id: number, data: {
     account_name?: string; account_type?: string; parent_id?: number | null
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const sets: string[] = []; const vals: unknown[] = []
     if (data.account_name !== undefined) { sets.push('account_name = ?'); vals.push(data.account_name) }
     if (data.account_type !== undefined) { sets.push('account_type = ?'); vals.push(data.account_type) }
@@ -68,8 +68,8 @@ function registerCOAHandlers() {
     return true
   })
 
-  ipcMain.handle('acc:coa:toggleActive', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('acc:coa:toggleActive', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const cur = getDb().prepare('SELECT is_active FROM chart_of_accounts WHERE id = ?').get(id) as { is_active: number } | undefined
     if (!cur) throw new Error('Account not found')
     const hasTx = (getDb().prepare('SELECT COUNT(*) as c FROM journal_entry_lines WHERE account_id = ?').get(id) as { c: number }).c > 0
@@ -85,10 +85,10 @@ function registerCOAHandlers() {
 // JOURNAL ENTRIES
 // =====================================================================
 function registerJournalHandlers() {
-  ipcMain.handle('acc:journal:list', async (_event, userId: number, filters?: {
+  ipcMain.handle('acc:journal:list', async (_event, token: string, userId: number, filters?: {
     date_from?: string; date_to?: string; account_id?: number; reference_type?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = []; const vals: unknown[] = []
     if (filters?.date_from) { where.push('je.date >= ?'); vals.push(filters.date_from) }
     if (filters?.date_to) { where.push('je.date <= ?'); vals.push(filters.date_to) }
@@ -129,11 +129,11 @@ function registerJournalHandlers() {
     }))
   })
 
-  ipcMain.handle('acc:journal:create', async (_event, userId: number, data: {
+  ipcMain.handle('acc:journal:create', async (_event, token: string, userId: number, data: {
     date: string; description: string
     lines: Array<{ account_id: number; debit: number; credit: number; description?: string }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const totalDebit = round2(data.lines.reduce((s, l) => s + (l.debit || 0), 0))
       const totalCredit = round2(data.lines.reduce((s, l) => s + (l.credit || 0), 0))
@@ -157,10 +157,10 @@ function registerJournalHandlers() {
     })
   })
 
-  ipcMain.handle('acc:ledger', async (_event, userId: number, data: {
+  ipcMain.handle('acc:ledger', async (_event, token: string, userId: number, data: {
     account_id: number; date_from?: string; date_to?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = ['jel.account_id = ?']; const vals: unknown[] = [data.account_id]
     if (data.date_from) { where.push('je.date >= ?'); vals.push(data.date_from) }
     if (data.date_to) { where.push('je.date <= ?'); vals.push(data.date_to) }
@@ -186,8 +186,8 @@ function registerJournalHandlers() {
 // TRIAL BALANCE
 // =====================================================================
 function registerTrialBalanceHandler() {
-  ipcMain.handle('acc:trialBalance', async (_event, userId: number, asOfDate: string) => {
-    assertUser(userId)
+  ipcMain.handle('acc:trialBalance', async (_event, token: string, userId: number, asOfDate: string) => {
+    assertUser(token, userId)
     const rows = getDb().prepare(`
       SELECT ca.id, ca.account_code, ca.account_name, ca.account_type,
         COALESCE(SUM(jel.debit), 0) as total_debit,
@@ -226,8 +226,8 @@ function registerTrialBalanceHandler() {
 // P&L STATEMENT
 // =====================================================================
 function registerPnLHandler() {
-  ipcMain.handle('acc:pnl', async (_event, userId: number, data: { date_from: string; date_to: string }) => {
-    assertUser(userId)
+  ipcMain.handle('acc:pnl', async (_event, token: string, userId: number, data: { date_from: string; date_to: string }) => {
+    assertUser(token, userId)
     const rows = getDb().prepare(`
       SELECT ca.account_code, ca.account_name, ca.account_type,
         COALESCE(SUM(jel.debit - jel.credit), 0) as balance
@@ -261,8 +261,8 @@ function registerPnLHandler() {
 // BALANCE SHEET
 // =====================================================================
 function registerBalanceSheetHandler() {
-  ipcMain.handle('acc:balanceSheet', async (_event, userId: number, asOfDate: string) => {
-    assertUser(userId)
+  ipcMain.handle('acc:balanceSheet', async (_event, token: string, userId: number, asOfDate: string) => {
+    assertUser(token, userId)
     // Get balances for all asset, liability, equity accounts
     const rows = getDb().prepare(`
       SELECT ca.account_code, ca.account_name, ca.account_type,

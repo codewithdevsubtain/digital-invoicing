@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Package, Users, Receipt, FileText, BarChart3, Plus, Undo2, ArrowUpDown } from 'lucide-react'
+import { ArrowLeft, Package, Users, Receipt, FileText, BarChart3, Plus, Undo2, ArrowUpDown, Printer } from 'lucide-react'
 import { api } from '../../lib/api.js'
 import { useAuthStore } from '../../store/authStore.js'
 import { useToastStore } from '../../store/toastStore.js'
+import { useSettingsStore } from '../../store/settingsStore.js'
 import { formatCurrency, formatDate } from '../../lib/format.js'
+import { buildDocumentPrintHtml, mapProjectQuotationToDocument, openDocumentPrintWindow } from '../../lib/documentPrint.js'
 import Loading from '../../components/Loading.js'
 import DataTable from '../../components/DataTable.js'
 import FormModal from '../../components/FormModal.js'
@@ -27,8 +29,10 @@ const expenseCategories = ['Transport', 'Tools & Equipment', 'Site Misc', 'Equip
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
   const projectId = Number(id)
+  const invalidId = !id || Number.isNaN(projectId)
   const { user } = useAuthStore()
   const addToast = useToastStore((s) => s.add)
+  const settings = useSettingsStore((s) => s.settings)
   const navigate = useNavigate()
 
   const [project, setProject] = useState<(Project & { customer_name: string | null }) | null>(null)
@@ -74,14 +78,16 @@ export default function ProjectDetail() {
   const loadRefs = useCallback(async () => {
     if (!user) return
     try {
-      const [w, i, e] = await Promise.all([
+      const [w, i, e, banks] = await Promise.all([
         api.inventory.listWarehouses().then((wh) => wh.filter((x) => x.is_active)),
         api.inventory.listItems(user.id, { is_active: true }),
         api.hr.employees.list(user.id, { is_active: true }).catch(() => []),
+        api.cashbank.bank.list().catch(() => []),
       ])
       setWarehouses(w.map((x: any) => ({ value: x.id, label: x.name })))
       setItems(i.map((x: any) => ({ value: x.id, label: `${x.item_code ?? ''} - ${x.name}` })))
       setEmployees((Array.isArray(e) ? e : []).map((x: any) => ({ value: x.id, label: x.full_name ?? `Employee #${x.id}` })))
+      setBankAccounts((Array.isArray(banks) ? banks : []).filter((b: any) => b.is_active).map((b: any) => ({ value: b.id, label: `${b.bank_name} - ${b.account_number}` })))
     } catch { /* ignore */ }
   }, [user])
 
@@ -203,8 +209,22 @@ export default function ProjectDetail() {
     } catch (err) { addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed' }) }
   }
 
+  const printQuotation = async () => {
+    if (!user || !project) return
+    try {
+      let customer: Awaited<ReturnType<typeof api.customers.get>> | null = null
+      if (project.customer_id) {
+        customer = await api.customers.get(user.id, project.customer_id).catch(() => null)
+      }
+      const doc = mapProjectQuotationToDocument(project, customer, settings)
+      openDocumentPrintWindow(buildDocumentPrintHtml(doc), `Quotation ${project.project_code || project.id}`)
+    } catch (err) {
+      addToast({ type: 'error', title: 'Print failed', message: err instanceof Error ? err.message : 'Could not open print window' })
+    }
+  }
+
   if (loading) return <Loading text="Loading project..." />
-  if (!project) return <div className="p-6 text-gray-500">Project not found.</div>
+  if (invalidId || !project) return <div className="p-6 text-gray-500">Project not found.</div>
 
   return (
     <div>
@@ -231,7 +251,14 @@ export default function ProjectDetail() {
             </p>
           </div>
           <div className="text-right">
-            <p className="text-sm text-gray-500">Contract Value</p>
+            <div className="flex items-center justify-end gap-2">
+              {(project.status === 'quotation' || project.status === 'approved') && (
+                <button type="button" onClick={printQuotation} className="btn-secondary gap-2 !py-1.5 !px-3 text-sm">
+                  <Printer size={14} /> Print Quotation
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-gray-500 mt-2">Contract Value</p>
             <p className="text-xl font-bold text-gray-900">{formatCurrency(project.contract_value)}</p>
           </div>
         </div>

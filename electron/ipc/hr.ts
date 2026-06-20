@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
-import { getDb, logActivity, runTransaction } from '../database/db.js'
+import { getDb, logActivity, runTransaction, recordCashBankTransaction } from '../database/db.js'
+import { assertAuth } from './guard.js'
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function round2(n: number): number {
@@ -27,8 +27,8 @@ function generateEmployeeCode(): string {
 // EMPLOYEES
 // =====================================================================
 function registerEmployeeHandlers() {
-  ipcMain.handle('hr:employees:list', async (_event, userId: number, filters?: { designation?: string; is_active?: boolean | null }) => {
-    assertUser(userId)
+  ipcMain.handle('hr:employees:list', async (_event, token: string, userId: number, filters?: { designation?: string; is_active?: boolean | null }) => {
+    assertUser(token, userId)
     const where: string[] = []; const vals: unknown[] = []
     if (filters?.designation) { where.push('designation = ?'); vals.push(filters.designation) }
     if (filters?.is_active !== null && filters?.is_active !== undefined) { where.push('is_active = ?'); vals.push(filters.is_active ? 1 : 0) }
@@ -36,15 +36,15 @@ function registerEmployeeHandlers() {
     return getDb().prepare(`SELECT * FROM employees ${wc} ORDER BY full_name`).all(...vals)
   })
 
-  ipcMain.handle('hr:employees:get', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('hr:employees:get', async (_event, token: string, _userId: number, id: number) => {
     return getDb().prepare('SELECT * FROM employees WHERE id = ?').get(id) ?? null
   })
 
-  ipcMain.handle('hr:employees:create', async (_event, userId: number, data: {
+  ipcMain.handle('hr:employees:create', async (_event, token: string, userId: number, data: {
     full_name: string; designation: string; phone?: string; cnic?: string; address?: string
     joining_date?: string; salary_type: string; monthly_salary?: number; daily_rate?: number
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     if (!data.full_name) throw new Error('Employee name is required')
     const code = generateEmployeeCode()
     const result = getDb().prepare(`
@@ -55,8 +55,8 @@ function registerEmployeeHandlers() {
     return { id: result.lastInsertRowid, employee_code: code }
   })
 
-  ipcMain.handle('hr:employees:update', async (_event, userId: number, id: number, data: Record<string, unknown>) => {
-    assertUser(userId)
+  ipcMain.handle('hr:employees:update', async (_event, token: string, userId: number, id: number, data: Record<string, unknown>) => {
+    assertUser(token, userId)
     const allowed = ['full_name', 'designation', 'phone', 'cnic', 'address', 'joining_date', 'salary_type', 'monthly_salary', 'daily_rate']
     const sets: string[] = []; const vals: unknown[] = []
     for (const k of allowed) { if (data[k] !== undefined) { sets.push(`${k} = ?`); vals.push(data[k]) } }
@@ -67,8 +67,8 @@ function registerEmployeeHandlers() {
     return true
   })
 
-  ipcMain.handle('hr:employees:toggleActive', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('hr:employees:toggleActive', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const e = getDb().prepare('SELECT is_active FROM employees WHERE id = ?').get(id) as { is_active: number } | undefined
     if (!e) throw new Error('Employee not found')
     const ns = e.is_active ? 0 : 1
@@ -82,10 +82,10 @@ function registerEmployeeHandlers() {
 // ATTENDANCE
 // =====================================================================
 function registerAttendanceHandlers() {
-  ipcMain.handle('hr:attendance:mark', async (_event, userId: number, data: {
+  ipcMain.handle('hr:attendance:mark', async (_event, token: string, userId: number, data: {
     employee_id: number; date: string; status: string; overtime_hours?: number; notes?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     getDb().prepare(`
       INSERT INTO attendance (employee_id, date, status, overtime_hours, notes, created_by)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -95,10 +95,10 @@ function registerAttendanceHandlers() {
     return true
   })
 
-  ipcMain.handle('hr:attendance:bulkMark', async (_event, userId: number, data: {
+  ipcMain.handle('hr:attendance:bulkMark', async (_event, token: string, userId: number, data: {
     date: string; entries: Array<{ employee_id: number; status: string; overtime_hours?: number }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     runTransaction(() => {
       const stmt = getDb().prepare(`
         INSERT INTO attendance (employee_id, date, status, overtime_hours, created_by)
@@ -113,7 +113,7 @@ function registerAttendanceHandlers() {
     return true
   })
 
-  ipcMain.handle('hr:attendance:list', async (_event, _userId: number, filters: {
+  ipcMain.handle('hr:attendance:list', async (_event, token: string, _userId: number, filters: {
     employee_id?: number; date_from?: string; date_to?: string
   }) => {
     const where: string[] = []; const vals: unknown[] = []
@@ -130,7 +130,7 @@ function registerAttendanceHandlers() {
     `).all(...vals)
   })
 
-  ipcMain.handle('hr:attendance:summary', async (_event, _userId: number, data: {
+  ipcMain.handle('hr:attendance:summary', async (_event, token: string, _userId: number, data: {
     employee_id: number; month: string; year: number
   }) => {
     const prefix = `${data.year}-${String(Number(data.month)).padStart(2, '0')}`
@@ -157,7 +157,7 @@ function registerAttendanceHandlers() {
 // SALARY & PAYROLL
 // =====================================================================
 function registerSalaryHandlers() {
-  ipcMain.handle('hr:salary:preview', async (_event, _userId: number, data: {
+  ipcMain.handle('hr:salary:preview', async (_event, token: string, _userId: number, data: {
     employee_id: number; month: string; year: number
   }) => {
     const emp = getDb().prepare('SELECT * FROM employees WHERE id = ?').get(data.employee_id) as {
@@ -206,13 +206,13 @@ function registerSalaryHandlers() {
     }
   })
 
-  ipcMain.handle('hr:salary:create', async (_event, userId: number, data: {
+  ipcMain.handle('hr:salary:create', async (_event, token: string, userId: number, data: {
     employee_id: number; month: string; year: number
     basic_salary: number; days_present: number; overtime_amount: number
     deductions: number; advance_deduction: number; net_salary: number
     payment_date: string; paid_via: string; bank_account_id?: number
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const result = getDb().prepare(`
         INSERT INTO salary_payments (employee_id, month, year, basic_salary, days_present, overtime_amount, deductions, advance_deduction, net_salary, payment_date, paid_via, bank_account_id, created_by)
@@ -247,10 +247,17 @@ function registerSalaryHandlers() {
       if (data.advance_deduction > 0) {
         jeLine.run(jeId, getCoaId('3000'), 0, data.advance_deduction, `Advance adjustment`)
       }
+      const netPay = round2(data.net_salary - data.advance_deduction)
       if (data.paid_via === 'cash') {
-        jeLine.run(jeId, getCoaId('1000'), 0, data.net_salary - data.advance_deduction, 'Cash')
+        const cashAcc = getDb().prepare('SELECT id FROM cash_accounts WHERE is_active = 1 LIMIT 1').get() as { id: number } | undefined
+        if (cashAcc) {
+          recordCashBankTransaction('cash', cashAcc.id, data.payment_date, 'payment', netPay, 'salary_payment', payId, `Salary ${data.month}/${data.year}`, userId)
+        }
+        jeLine.run(jeId, getCoaId('1000'), 0, netPay, 'Cash')
       } else {
-        jeLine.run(jeId, getCoaId('1100'), 0, data.net_salary - data.advance_deduction, 'Bank')
+        if (!data.bank_account_id) throw new Error('Bank account is required for bank salary payments')
+        recordCashBankTransaction('bank', data.bank_account_id, data.payment_date, 'payment', netPay, 'salary_payment', payId, `Salary ${data.month}/${data.year}`, userId)
+        jeLine.run(jeId, getCoaId('1100'), 0, netPay, 'Bank')
       }
 
       logActivity(userId, 'create', 'hr', payId, `Salary payment for emp #${data.employee_id}: ${data.net_salary}`)
@@ -258,7 +265,7 @@ function registerSalaryHandlers() {
     })
   })
 
-  ipcMain.handle('hr:salary:list', async (_event, _userId: number, filters?: {
+  ipcMain.handle('hr:salary:list', async (_event, token: string, _userId: number, filters?: {
     employee_id?: number; month?: string; year?: number
   }) => {
     const where: string[] = []; const vals: unknown[] = []
@@ -275,8 +282,8 @@ function registerSalaryHandlers() {
     `).all(...vals)
   })
 
-  ipcMain.handle('hr:payroll:preview', async (_event, userId: number, data: { month: string; year: number }) => {
-    assertUser(userId)
+  ipcMain.handle('hr:payroll:preview', async (_event, token: string, userId: number, data: { month: string; year: number }) => {
+    assertUser(token, userId)
     const employees = getDb().prepare("SELECT id, full_name, employee_code, designation, salary_type, monthly_salary, daily_rate FROM employees WHERE is_active = 1 ORDER BY full_name").all() as Array<{
       id: number; full_name: string; employee_code: string | null; designation: string
       salary_type: string; monthly_salary: number; daily_rate: number
@@ -333,10 +340,10 @@ function registerSalaryHandlers() {
 // EMPLOYEE ADVANCES
 // =====================================================================
 function registerAdvanceHandlers() {
-  ipcMain.handle('hr:advances:give', async (_event, userId: number, data: {
+  ipcMain.handle('hr:advances:give', async (_event, token: string, userId: number, data: {
     employee_id: number; date: string; amount: number; reason?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const result = getDb().prepare(`
         INSERT INTO employee_advances (employee_id, date, amount, reason, status, created_by)
@@ -344,11 +351,10 @@ function registerAdvanceHandlers() {
       `).run(data.employee_id, data.date, data.amount, data.reason ?? null, userId)
       const advId = Number(result.lastInsertRowid)
 
-      getDb().prepare(`
-        INSERT INTO cash_bank_transactions (account_type, account_id, date, transaction_type, amount, reference_type, reference_id, description, balance_after, created_by)
-        VALUES ('cash', (SELECT id FROM cash_accounts WHERE is_active = 1 LIMIT 1), ?, 'payment', ?, 'employee_advance', ?, ?, ?, ?)
-      `).run(data.date, -data.amount, advId, data.reason ?? 'Advance', -data.amount, userId)
-      getDb().prepare('UPDATE cash_accounts SET current_balance = current_balance - ? WHERE is_active = 1').run(data.amount)
+      const cashAcc = getDb().prepare('SELECT id FROM cash_accounts WHERE is_active = 1 LIMIT 1').get() as { id: number } | undefined
+      if (cashAcc) {
+        recordCashBankTransaction('cash', cashAcc.id, data.date, 'payment', data.amount, 'employee_advance', advId, data.reason ?? 'Advance', userId)
+      }
 
       const jeResult = getDb().prepare(`
         INSERT INTO journal_entries (entry_number, date, reference_type, reference_id, description, created_by)
@@ -364,7 +370,7 @@ function registerAdvanceHandlers() {
     })
   })
 
-  ipcMain.handle('hr:advances:list', async (_event, _userId: number, filters?: { employee_id?: number; status?: string }) => {
+  ipcMain.handle('hr:advances:list', async (_event, token: string, _userId: number, filters?: { employee_id?: number; status?: string }) => {
     const where: string[] = []; const vals: unknown[] = []
     if (filters?.employee_id) { where.push('ea.employee_id = ?'); vals.push(filters.employee_id) }
     if (filters?.status) { where.push('ea.status = ?'); vals.push(filters.status) }

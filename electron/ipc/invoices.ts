@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
-import { getDb, logActivity, runTransaction } from '../database/db.js'
+import { getDb, logActivity, runTransaction, recordCashBankTransaction } from '../database/db.js'
+import { assertAuth } from './guard.js'
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function round2(n: number): number {
@@ -48,7 +48,7 @@ function getCoaId(code: string): number {
 // SALES INVOICES
 // =====================================================================
 function registerSalesInvoiceHandlers() {
-  ipcMain.handle('sales:create', async (_event, userId: number, data: {
+  ipcMain.handle('sales:create', async (_event, token: string, userId: number, data: {
     customer_id: number; project_id?: number; date: string
     discount_percent?: number; discount_amount?: number
     further_tax_percent?: number; withholding_tax_percent?: number; notes?: string
@@ -57,7 +57,7 @@ function registerSalesInvoiceHandlers() {
       gst_percent?: number
     }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const invNumber = generateNumber('INV')
 
@@ -159,10 +159,10 @@ function registerSalesInvoiceHandlers() {
     })
   })
 
-  ipcMain.handle('sales:list', async (_event, userId: number, filters?: {
+  ipcMain.handle('sales:list', async (_event, token: string, userId: number, filters?: {
     customer_id?: number; project_id?: number; payment_status?: string; date_from?: string; date_to?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = ['si.is_voided = 0']
     const vals: unknown[] = []
     if (filters?.customer_id) { where.push('si.customer_id = ?'); vals.push(filters.customer_id) }
@@ -180,9 +180,10 @@ function registerSalesInvoiceHandlers() {
     `).all(...vals)
   })
 
-  ipcMain.handle('sales:getById', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('sales:getById', async (_event, token: string, _userId: number, id: number) => {
     const inv = getDb().prepare(`
       SELECT si.*, c.name as customer_name, c.address as customer_address, c.ntn as customer_ntn, c.strn as customer_strn,
+             c.phone as customer_phone, c.email as customer_email,
              p.project_name
       FROM sales_invoices si
       JOIN customers c ON si.customer_id = c.id
@@ -200,8 +201,8 @@ function registerSalesInvoiceHandlers() {
     return { ...inv, items }
   })
 
-  ipcMain.handle('sales:void', async (_event, userId: number, id: number, reason: string) => {
-    assertUser(userId)
+  ipcMain.handle('sales:void', async (_event, token: string, userId: number, id: number, reason: string) => {
+    assertUser(token, userId)
     return runTransaction(() => {
       const inv = getDb().prepare('SELECT * FROM sales_invoices WHERE id = ?').get(id) as Record<string, unknown> | undefined
       if (!inv) throw new Error('Invoice not found')
@@ -242,8 +243,8 @@ function registerSalesInvoiceHandlers() {
     })
   })
 
-  ipcMain.handle('sales:projectMaterials', async (_event, userId: number, projectId: number) => {
-    assertUser(userId)
+  ipcMain.handle('sales:projectMaterials', async (_event, token: string, userId: number, projectId: number) => {
+    assertUser(token, userId)
     return getDb().prepare(`
       SELECT pmi.id, pmi.item_id, pmi.quantity_issued, pmi.unit_cost, pmi.total_cost,
              i.name as item_name, i.item_code, u.short_code as unit_short_code
@@ -260,12 +261,12 @@ function registerSalesInvoiceHandlers() {
 // CUSTOMER RECEIPTS
 // =====================================================================
 function registerReceiptHandlers() {
-  ipcMain.handle('receipt:record', async (_event, userId: number, data: {
+  ipcMain.handle('receipt:record', async (_event, token: string, userId: number, data: {
     customer_id: number; sales_invoice_id: number; date: string
     amount: number; payment_method: string; bank_account_id?: number; reference_no?: string; notes?: string
     withholding_tax_deducted?: number
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const receiptNumber = generateReceiptNumber()
       const whtDeducted = data.withholding_tax_deducted ?? 0
@@ -316,16 +317,15 @@ function registerReceiptHandlers() {
       if (data.payment_method === 'cash') {
         const cashAcc = getDb().prepare('SELECT id FROM cash_accounts WHERE is_active = 1 LIMIT 1').get() as { id: number } | undefined
         if (cashAcc) {
-          getDb().prepare(`
-            INSERT INTO cash_bank_transactions (account_type, account_id, date, transaction_type, amount, reference_type, reference_id, description, balance_after, created_by)
-            VALUES ('cash', ?, ?, 'receipt', ?, 'customer_receipt', ?, ?, ?, ?)
-          `).run(cashAcc.id, data.date, data.amount, receiptId, `Receipt ${receiptNumber}`, data.amount, userId)
-          getDb().prepare('UPDATE cash_accounts SET current_balance = current_balance + ? WHERE id = ?').run(data.amount, cashAcc.id)
+          recordCashBankTransaction('cash', cashAcc.id, data.date, 'receipt', data.amount, 'customer_receipt', receiptId, `Receipt ${receiptNumber}`, userId)
         }
         jeLine.run(jeId, getCoaId('1000'), data.amount, 0, `Cash - ${receiptNumber}`)
-      } else if (data.bank_account_id) {
-        jeLine.run(jeId, getCoaId('1100'), data.amount, 0, `Bank - ${receiptNumber}`)
       } else {
+        const bankId = data.bank_account_id
+          ?? (getDb().prepare('SELECT id FROM bank_accounts WHERE is_active = 1 LIMIT 1').get() as { id: number } | undefined)?.id
+        if (bankId) {
+          recordCashBankTransaction('bank', bankId, data.date, 'receipt', data.amount, 'customer_receipt', receiptId, `Receipt ${receiptNumber}`, userId)
+        }
         jeLine.run(jeId, getCoaId('1100'), data.amount, 0, `Bank - ${receiptNumber}`)
       }
 
@@ -342,10 +342,10 @@ function registerReceiptHandlers() {
     })
   })
 
-  ipcMain.handle('receipt:list', async (_event, userId: number, filters?: {
+  ipcMain.handle('receipt:list', async (_event, token: string, userId: number, filters?: {
     customer_id?: number; sales_invoice_id?: number; date_from?: string; date_to?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = []
     const vals: unknown[] = []
     if (filters?.customer_id) { where.push('cr.customer_id = ?'); vals.push(filters.customer_id) }

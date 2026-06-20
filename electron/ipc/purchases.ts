@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
-import { getDb, logActivity, runTransaction } from '../database/db.js'
+import { getDb, logActivity, runTransaction, recordCashBankTransaction } from '../database/db.js'
 import { recordStockMovement } from './inventory.js'
+import { assertAuth } from './guard.js'
 
 /*
  * VENDOR LEDGER SIGN CONVENTION:
@@ -14,9 +15,8 @@ import { recordStockMovement } from './inventory.js'
  *   Dr = debit entry, Cr = credit entry, using standard double-entry.
  */
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function round2(n: number): number {
@@ -50,11 +50,11 @@ function getCoaId(code: string): number {
 // PURCHASE ORDERS
 // =====================================================================
 function registerPurchaseOrderHandlers() {
-  ipcMain.handle('po:create', async (_event, userId: number, data: {
+  ipcMain.handle('po:create', async (_event, token: string, userId: number, data: {
     vendor_id: number; date: string; notes?: string
     items: Array<{ item_id: number; quantity: number; rate: number }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const poNumber = generateNumber('PO', 'purchase_orders', 'po_number')
       const result = getDb().prepare(
@@ -75,8 +75,8 @@ function registerPurchaseOrderHandlers() {
     })
   })
 
-  ipcMain.handle('po:list', async (_event, userId: number, filters?: { vendor_id?: number; status?: string; date_from?: string; date_to?: string }) => {
-    assertUser(userId)
+  ipcMain.handle('po:list', async (_event, token: string, userId: number, filters?: { vendor_id?: number; status?: string; date_from?: string; date_to?: string }) => {
+    assertUser(token, userId)
     const where: string[] = []
     const values: unknown[] = []
     if (filters?.vendor_id) { where.push('po.vendor_id = ?'); values.push(filters.vendor_id) }
@@ -93,7 +93,7 @@ function registerPurchaseOrderHandlers() {
     `).all(...values)
   })
 
-  ipcMain.handle('po:getById', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('po:getById', async (_event, token: string, _userId: number, id: number) => {
     const po = getDb().prepare(`
       SELECT po.*, v.name as vendor_name
       FROM purchase_orders po
@@ -110,11 +110,11 @@ function registerPurchaseOrderHandlers() {
     return { ...po, items }
   })
 
-  ipcMain.handle('po:update', async (_event, userId: number, id: number, data: {
+  ipcMain.handle('po:update', async (_event, token: string, userId: number, id: number, data: {
     vendor_id?: number; date?: string; notes?: string; status?: string
     items?: Array<{ item_id: number; quantity: number; rate: number }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const sets: string[] = []
       const vals: unknown[] = []
@@ -138,15 +138,15 @@ function registerPurchaseOrderHandlers() {
     })
   })
 
-  ipcMain.handle('po:updateStatus', async (_event, userId: number, id: number, status: string) => {
-    assertUser(userId)
+  ipcMain.handle('po:updateStatus', async (_event, token: string, userId: number, id: number, status: string) => {
+    assertUser(token, userId)
     getDb().prepare('UPDATE purchase_orders SET status = ? WHERE id = ?').run(status, id)
     logActivity(userId, 'update', 'purchases', id, `PO #${id} status -> ${status}`)
     return true
   })
 
-  ipcMain.handle('po:delete', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('po:delete', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const po = getDb().prepare('SELECT status FROM purchase_orders WHERE id = ?').get(id) as { status: string } | undefined
     if (!po) throw new Error('PO not found')
     if (po.status !== 'draft') throw new Error('Only draft POs can be deleted')
@@ -160,7 +160,7 @@ function registerPurchaseOrderHandlers() {
 // PURCHASE INVOICES
 // =====================================================================
 function registerPurchaseInvoiceHandlers() {
-  ipcMain.handle('pi:create', async (_event, userId: number, data: {
+  ipcMain.handle('pi:create', async (_event, token: string, userId: number, data: {
     vendor_id: number; vendor_invoice_no?: string; date: string; warehouse_id: number
     purchase_order_id?: number; notes?: string
     discount_percent?: number; gst_percent?: number; withholding_tax_percent?: number; other_charges?: number
@@ -169,7 +169,7 @@ function registerPurchaseInvoiceHandlers() {
       discount_percent?: number; gst_percent?: number
     }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const invNumber = generateNumber('PINV', 'purchase_invoices', 'invoice_number')
 
@@ -289,10 +289,10 @@ function registerPurchaseInvoiceHandlers() {
     })
   })
 
-  ipcMain.handle('pi:list', async (_event, userId: number, filters?: {
+  ipcMain.handle('pi:list', async (_event, token: string, userId: number, filters?: {
     vendor_id?: number; payment_status?: string; date_from?: string; date_to?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = ['pi.is_voided = 0']
     const values: unknown[] = []
     if (filters?.vendor_id) { where.push('pi.vendor_id = ?'); values.push(filters.vendor_id) }
@@ -309,7 +309,7 @@ function registerPurchaseInvoiceHandlers() {
     `).all(...values)
   })
 
-  ipcMain.handle('pi:getById', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('pi:getById', async (_event, token: string, _userId: number, id: number) => {
     const inv = getDb().prepare(`
       SELECT pi.*, v.name as vendor_name,
         (pi.total_amount - pi.amount_paid) as balance_due
@@ -328,8 +328,8 @@ function registerPurchaseInvoiceHandlers() {
     return { ...inv, items }
   })
 
-  ipcMain.handle('pi:void', async (_event, userId: number, id: number, reason: string) => {
-    assertUser(userId)
+  ipcMain.handle('pi:void', async (_event, token: string, userId: number, id: number, reason: string) => {
+    assertUser(token, userId)
     return runTransaction(() => {
       const inv = getDb().prepare('SELECT * FROM purchase_invoices WHERE id = ?').get(id) as Record<string, unknown> | undefined
       if (!inv) throw new Error('Invoice not found')
@@ -400,12 +400,12 @@ function registerPurchaseInvoiceHandlers() {
 // VENDOR PAYMENTS
 // =====================================================================
 function registerPaymentHandlers() {
-  ipcMain.handle('payment:record', async (_event, userId: number, data: {
+  ipcMain.handle('payment:record', async (_event, token: string, userId: number, data: {
     vendor_id: number; date: string; amount: number
     payment_method: string; bank_account_id?: number; reference_no?: string; notes?: string
     allocations: Array<{ purchase_invoice_id: number; amount: number }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const payNumber = generateNumber('VPAY', 'vendor_payments', 'payment_number')
       const totalAllocated = data.allocations.reduce((s, a) => s + a.amount, 0)
@@ -472,19 +472,15 @@ function registerPaymentHandlers() {
       if (data.payment_method === 'cash') {
         const cashAcc = getDb().prepare('SELECT id FROM cash_accounts WHERE is_active = 1 LIMIT 1').get() as { id: number } | undefined
         if (cashAcc) {
-          getDb().prepare(`
-            INSERT INTO cash_bank_transactions (account_type, account_id, date, transaction_type, amount, reference_type, reference_id, description, balance_after, created_by)
-            VALUES ('cash', ?, ?, 'payment', ?, 'vendor_payment', ?, ?, ?, ?)
-          `).run(
-            cashAcc.id, data.date, -data.amount, payId,
-            `Payment ${payNumber}`, -data.amount, userId
-          )
-          getDb().prepare('UPDATE cash_accounts SET current_balance = current_balance - ? WHERE id = ?').run(data.amount, cashAcc.id)
+          recordCashBankTransaction('cash', cashAcc.id, data.date, 'payment', data.amount, 'vendor_payment', payId, `Payment ${payNumber}`, userId)
         }
         jeLine.run(jeId, getCoaId('1000'), 0, data.amount, `Cash - ${payNumber}`)
-      } else if (data.bank_account_id) {
-        jeLine.run(jeId, getCoaId('1100'), 0, data.amount, `Bank - ${payNumber}`)
       } else {
+        const bankId = data.bank_account_id
+          ?? (getDb().prepare('SELECT id FROM bank_accounts WHERE is_active = 1 LIMIT 1').get() as { id: number } | undefined)?.id
+        if (bankId) {
+          recordCashBankTransaction('bank', bankId, data.date, 'payment', data.amount, 'vendor_payment', payId, `Payment ${payNumber}`, userId)
+        }
         jeLine.run(jeId, getCoaId('1100'), 0, data.amount, `Bank - ${payNumber}`)
       }
 
@@ -493,10 +489,10 @@ function registerPaymentHandlers() {
     })
   })
 
-  ipcMain.handle('payment:list', async (_event, userId: number, filters?: {
+  ipcMain.handle('payment:list', async (_event, token: string, userId: number, filters?: {
     vendor_id?: number; date_from?: string; date_to?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = []
     const values: unknown[] = []
     if (filters?.vendor_id) { where.push('vp.vendor_id = ?'); values.push(filters.vendor_id) }
@@ -512,7 +508,7 @@ function registerPaymentHandlers() {
     `).all(...values)
   })
 
-  ipcMain.handle('payment:getById', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('payment:getById', async (_event, token: string, _userId: number, id: number) => {
     const pay = getDb().prepare(`
       SELECT vp.*, v.name as vendor_name
       FROM vendor_payments vp
@@ -529,8 +525,8 @@ function registerPaymentHandlers() {
     return { ...pay, allocations }
   })
 
-  ipcMain.handle('pi:getOutstanding', async (_event, userId: number, vendorId: number) => {
-    assertUser(userId)
+  ipcMain.handle('pi:getOutstanding', async (_event, token: string, userId: number, vendorId: number) => {
+    assertUser(token, userId)
     return getDb().prepare(`
       SELECT pi.id, pi.invoice_number, pi.date, pi.total_amount, pi.amount_paid,
         (pi.total_amount - pi.amount_paid) as balance_due

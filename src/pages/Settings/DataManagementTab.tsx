@@ -1,21 +1,26 @@
 import { useEffect, useState } from 'react'
 import { Download, Upload, Info, HardDrive } from 'lucide-react'
+import { api } from '../../lib/api.js'
+import { useAuthStore } from '../../store/authStore.js'
 import { useToastStore } from '../../store/toastStore.js'
 
 export default function DataManagementTab() {
+  const { user } = useAuthStore()
   const addToast = useToastStore((s) => s.add)
   const [appInfo, setAppInfo] = useState<{ userData: string; backups: string; version: string } | null>(null)
   const [restoring, setRestoring] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
 
   useEffect(() => {
-    window.electronAPI.invoke('app:settingsPath').then((r: any) => setAppInfo(r)).catch(() => {})
-  }, [])
+    if (!user) return
+    api.app.settingsPath(user.id).then(setAppInfo).catch(() => {})
+  }, [user])
 
   const handleBackup = async () => {
+    if (!user) return
     setBackingUp(true)
     try {
-      const r: any = await window.electronAPI.invoke('app:backup')
+      const r = await api.app.backup(user.id)
       if (r.success) {
         addToast({ type: 'success', title: 'Backup Created', message: `Saved to ${r.path}` })
       }
@@ -25,13 +30,14 @@ export default function DataManagementTab() {
   }
 
   const handleRestore = async () => {
+    if (!user) return
     const confirmed = window.confirm('WARNING: This will REPLACE ALL current data with the backup. This cannot be undone. Are you sure?')
     if (!confirmed) return
     const confirmed2 = window.confirm('Final confirmation: Restore database from backup? The application will restart automatically.')
     if (!confirmed2) return
     setRestoring(true)
     try {
-      const r: any = await window.electronAPI.invoke('app:restore', true)
+      const r = await api.app.restore(user.id, true)
       if (r.success) {
         addToast({ type: 'success', title: 'Restoring', message: 'App will restart...' })
       } else if (!r.error?.includes('confirm')) {

@@ -1,5 +1,6 @@
 import { ipcMain, dialog } from 'electron'
 import { getDb } from '../database/db.js'
+import { assertAuth } from './guard.js'
 import fs from 'fs'
 
 function round2(n: number): number {
@@ -10,7 +11,7 @@ function round2(n: number): number {
 // PROJECT PROFITABILITY REPORT
 // =====================================================================
 function registerProjectReport() {
-  ipcMain.handle('reports:projectProfitability', async (_event, _userId: number, filters?: {
+  ipcMain.handle('reports:projectProfitability', async (_event, token: string, _userId: number, filters?: {
     date_from?: string; date_to?: string; status?: string
   }) => {
     const where: string[] = []; const vals: unknown[] = []
@@ -63,7 +64,7 @@ function registerProjectReport() {
 // RECEIVABLES / PAYABLES AGING
 // =====================================================================
 function registerAgingReports() {
-  ipcMain.handle('reports:receivablesAging', async (_event, _userId: number, asOfDate: string) => {
+  ipcMain.handle('reports:receivablesAging', async (_event, token: string, _userId: number, asOfDate: string) => {
     const asOf = new Date(asOfDate)
     const customers = getDb().prepare(`
       SELECT c.id, c.name,
@@ -96,7 +97,7 @@ function registerAgingReports() {
     })
   })
 
-  ipcMain.handle('reports:payablesAging', async (_event, _userId: number, asOfDate: string) => {
+  ipcMain.handle('reports:payablesAging', async (_event, token: string, _userId: number, asOfDate: string) => {
     const asOf = new Date(asOfDate)
     const vendors = getDb().prepare(`
       SELECT v.id, v.name,
@@ -134,19 +135,33 @@ function registerAgingReports() {
 // INVENTORY REPORTS
 // =====================================================================
 function registerInventoryReports() {
-  ipcMain.handle('reports:inventoryValuation', async (_event, _userId: number, _asOfDate: string, warehouse_id?: number) => {
-    const where: string[] = ['i.is_active = 1']
-    const vals: unknown[] = []
-    if (warehouse_id) { where.push('is2.warehouse_id = ?'); vals.push(warehouse_id) }
+  ipcMain.handle('reports:inventoryValuation', async (_event, token: string, _userId: number, asOfDate: string, warehouse_id?: number) => {
+    assertAuth(token, _userId)
+    const vals: unknown[] = [asOfDate]
+    if (warehouse_id) vals.push(warehouse_id)
 
     const items = getDb().prepare(`
       SELECT i.id, i.item_code, i.name, i.item_type, ic.name as category_name,
-        COALESCE(SUM(is2.quantity_on_hand), 0) as quantity,
-        COALESCE(AVG(is2.average_cost), 0) as avg_cost
+        COALESCE(SUM(
+          CASE sm.movement_type
+            WHEN 'purchase_in' THEN sm.quantity
+            WHEN 'fabrication_in' THEN sm.quantity
+            WHEN 'project_return' THEN sm.quantity
+            WHEN 'adjustment_in' THEN sm.quantity
+            WHEN 'opening_stock' THEN sm.quantity
+            WHEN 'fabrication_out' THEN -sm.quantity
+            WHEN 'project_issue' THEN -sm.quantity
+            WHEN 'adjustment_out' THEN -sm.quantity
+            WHEN 'sale_out' THEN -sm.quantity
+            ELSE 0
+          END
+        ), 0) as quantity,
+        COALESCE(AVG(CASE WHEN sm.unit_cost > 0 THEN sm.unit_cost END), 0) as avg_cost
       FROM items i
       LEFT JOIN item_categories ic ON i.category_id = ic.id
-      LEFT JOIN item_stock is2 ON i.id = is2.item_id ${warehouse_id ? 'AND is2.warehouse_id = ?' : ''}
-      WHERE ${where.join(' AND ')}
+      LEFT JOIN stock_movements sm ON i.id = sm.item_id AND sm.date <= ?
+      ${warehouse_id ? 'AND sm.warehouse_id = ?' : ''}
+      WHERE i.is_active = 1
       GROUP BY i.id
       HAVING quantity > 0
       ORDER BY i.item_type, i.name
@@ -160,7 +175,7 @@ function registerInventoryReports() {
     return { rows: result, grand_total: grandTotal }
   })
 
-  ipcMain.handle('reports:movement', async (_event, _userId: number, filters: {
+  ipcMain.handle('reports:movement', async (_event, token: string, _userId: number, filters: {
     item_id?: number; date_from: string; date_to: string
   }) => {
     const where: string[] = ['sm.date >= ?', 'sm.date <= ?']
@@ -195,7 +210,7 @@ function registerInventoryReports() {
 // TAX REPORTS
 // =====================================================================
 function registerTaxReports() {
-  ipcMain.handle('reports:salesTax', async (_event, _userId: number, data: { date_from: string; date_to: string }) => {
+  ipcMain.handle('reports:salesTax', async (_event, token: string, _userId: number, data: { date_from: string; date_to: string }) => {
     // Output GST from sales invoices
     const outputTax = getDb().prepare(`
       SELECT strftime('%Y-%m', date) as month,
@@ -245,7 +260,7 @@ function registerTaxReports() {
     return { rows: combined, totals }
   })
 
-  ipcMain.handle('reports:wht', async (_event, _userId: number, data: { date_from: string; date_to: string }) => {
+  ipcMain.handle('reports:wht', async (_event, token: string, _userId: number, data: { date_from: string; date_to: string }) => {
     // WHT on sales (customer withholds from us - we claim tax credit)
     const salesWHT = getDb().prepare(`
       SELECT strftime('%Y-%m', date) as month, SUM(withholding_tax_amount) as wht_amount
@@ -279,7 +294,7 @@ function registerTaxReports() {
 // EXPENSE BREAKDOWN & EMPLOYEE COST
 // =====================================================================
 function registerExpenseHrReports() {
-  ipcMain.handle('reports:expenseBreakdown', async (_event, _userId: number, data: { date_from: string; date_to: string }) => {
+  ipcMain.handle('reports:expenseBreakdown', async (_event, token: string, _userId: number, data: { date_from: string; date_to: string }) => {
     const rows = getDb().prepare(`
       SELECT ec.name as category, ec.type, SUM(ce.amount) as total
       FROM company_expenses ce
@@ -292,7 +307,7 @@ function registerExpenseHrReports() {
     return { rows: rows.map((r) => ({ ...r, total: round2(r.total), pct: grandTotal > 0 ? round2((r.total / grandTotal) * 100) : 0 })), grand_total: grandTotal }
   })
 
-  ipcMain.handle('reports:employeeCost', async (_event, _userId: number, data: { month: string; year: number }) => {
+  ipcMain.handle('reports:employeeCost', async (_event, token: string, _userId: number, data: { month: string; year: number }) => {
     const prefix = `${data.year}-${String(Number(data.month)).padStart(2, '0')}`
     // Salary payments
     const salary = getDb().prepare(`
@@ -327,9 +342,11 @@ function registerExpenseHrReports() {
 // BUSINESS PERFORMANCE DASHBOARD DATA
 // =====================================================================
 function registerDashboardData() {
-  ipcMain.handle('reports:dashboard', async (_event, _userId: number, data: { date_from?: string; date_to?: string }) => {
-    const df = data.date_from ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
-    const dt = data.date_to ?? new Date().toISOString().split('T')[0]
+  ipcMain.handle('reports:dashboard', async (_event, token: string, _userId: number, data?: { date_from?: string; date_to?: string }) => {
+    assertAuth(token, _userId)
+    const filters = data ?? {}
+    const df = filters.date_from ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
+    const dt = filters.date_to ?? new Date().toISOString().split('T')[0]
 
     const totalSales = (getDb().prepare(
       "SELECT COALESCE(SUM(grand_total), 0) as t FROM sales_invoices WHERE date >= ? AND date <= ? AND is_voided = 0"
@@ -429,7 +446,7 @@ function registerDashboardData() {
 // CSV EXPORT
 // =====================================================================
 function registerExportHandler() {
-  ipcMain.handle('reports:exportCSV', async (_event, _userId: number, data: { defaultName: string; headers: string[]; rows: string[][] }) => {
+  ipcMain.handle('reports:exportCSV', async (_event, token: string, _userId: number, data: { defaultName: string; headers: string[]; rows: string[][] }) => {
     const result = await dialog.showSaveDialog({
       title: 'Export CSV',
       defaultPath: data.defaultName,

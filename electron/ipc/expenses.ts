@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
-import { getDb, logActivity, runTransaction } from '../database/db.js'
+import { getDb, logActivity, runTransaction, recordCashBankTransaction } from '../database/db.js'
+import { assertAuth } from './guard.js'
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function round2(n: number): number {
@@ -51,8 +51,8 @@ function registerCategoryHandlers() {
     `).all()
   })
 
-  ipcMain.handle('expenses:categories:create', async (_event, userId: number, data: { name: string; type: string; account_id?: number }) => {
-    assertUser(userId)
+  ipcMain.handle('expenses:categories:create', async (_event, token: string, userId: number, data: { name: string; type: string; account_id?: number }) => {
+    assertUser(token, userId)
     if (!data.name) throw new Error('Category name is required')
     try {
       const result = getDb().prepare(
@@ -66,8 +66,8 @@ function registerCategoryHandlers() {
     }
   })
 
-  ipcMain.handle('expenses:categories:update', async (_event, userId: number, id: number, data: { name?: string; type?: string; account_id?: number | null }) => {
-    assertUser(userId)
+  ipcMain.handle('expenses:categories:update', async (_event, token: string, userId: number, id: number, data: { name?: string; type?: string; account_id?: number | null }) => {
+    assertUser(token, userId)
     const sets: string[] = []; const vals: unknown[] = []
     if (data.name !== undefined) { sets.push('name = ?'); vals.push(data.name) }
     if (data.type !== undefined) { sets.push('type = ?'); vals.push(data.type) }
@@ -89,11 +89,11 @@ function registerCategoryHandlers() {
 // COMPANY EXPENSES
 // =====================================================================
 function registerCompanyExpenseHandlers() {
-  ipcMain.handle('expenses:create', async (_event, userId: number, data: {
+  ipcMain.handle('expenses:create', async (_event, token: string, userId: number, data: {
     category_id: number; description?: string; amount: number; date: string
     paid_via: string; bank_account_id?: number
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       if (data.amount <= 0) throw new Error('Amount must be greater than zero')
       const expNumber = generateNumber()
@@ -148,10 +148,10 @@ function registerCompanyExpenseHandlers() {
     })
   })
 
-  ipcMain.handle('expenses:list', async (_event, userId: number, filters?: {
+  ipcMain.handle('expenses:list', async (_event, token: string, userId: number, filters?: {
     category_id?: number; date_from?: string; date_to?: string; paid_via?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = []
     const vals: unknown[] = []
     if (filters?.category_id) { where.push('ce.category_id = ?'); vals.push(filters.category_id) }
@@ -168,7 +168,7 @@ function registerCompanyExpenseHandlers() {
     `).all(...vals)
   })
 
-  ipcMain.handle('expenses:get', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('expenses:get', async (_event, token: string, _userId: number, id: number) => {
     return getDb().prepare(`
       SELECT ce.*, ec.name as category_name, ec.type as category_type
       FROM company_expenses ce
@@ -177,10 +177,10 @@ function registerCompanyExpenseHandlers() {
     `).get(id) ?? null
   })
 
-  ipcMain.handle('expenses:update', async (_event, userId: number, id: number, data: {
+  ipcMain.handle('expenses:update', async (_event, token: string, userId: number, id: number, data: {
     category_id?: number; description?: string; amount?: number; date?: string; paid_via?: string; bank_account_id?: number | null
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const sets: string[] = []; const vals: unknown[] = []
     if (data.category_id !== undefined) { sets.push('category_id = ?'); vals.push(data.category_id) }
     if (data.description !== undefined) { sets.push('description = ?'); vals.push(data.description) }
@@ -195,8 +195,8 @@ function registerCompanyExpenseHandlers() {
     return true
   })
 
-  ipcMain.handle('expenses:delete', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('expenses:delete', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     return runTransaction(() => {
       const exp = getDb().prepare('SELECT * FROM company_expenses WHERE id = ?').get(id) as Record<string, unknown> | undefined
       if (!exp) throw new Error('Expense not found')
@@ -230,7 +230,7 @@ function registerCompanyExpenseHandlers() {
     })
   })
 
-  ipcMain.handle('expenses:summary', async (_event, _userId: number, data: { date_from?: string; date_to?: string }) => {
+  ipcMain.handle('expenses:summary', async (_event, token: string, _userId: number, data: { date_from?: string; date_to?: string }) => {
     const where: string[] = []
     const vals: unknown[] = []
     if (data.date_from) { where.push('ce.date >= ?'); vals.push(data.date_from) }

@@ -23,9 +23,10 @@ export default function VendorLedger() {
   const [loading, setLoading] = useState(false)
 
   const vendorId = Number(id)
+  const invalidId = !id || Number.isNaN(vendorId)
 
   const load = async () => {
-    if (!user || !vendorId) return
+    if (!user || invalidId) return
     setLoading(true)
     try {
       const [v, ledger] = await Promise.all([
@@ -42,8 +43,13 @@ export default function VendorLedger() {
   }
 
   useEffect(() => {
+    if (invalidId) return
     load()
-  }, [user, vendorId, dateFrom, dateTo])
+  }, [user, vendorId, dateFrom, dateTo, invalidId])
+
+  if (invalidId) {
+    return <div className="p-6 text-gray-500">Vendor not found.</div>
+  }
 
   const exportCSV = () => {
     if (!vendor) return

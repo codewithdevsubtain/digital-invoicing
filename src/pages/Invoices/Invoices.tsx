@@ -6,6 +6,7 @@ import { useToastStore } from '../../store/toastStore.js'
 import { useSettingsStore } from '../../store/settingsStore.js'
 import { formatCurrency, formatDate } from '../../lib/format.js'
 import { numberToWords } from '../../lib/numberToWords.js'
+import { buildDocumentPrintHtml, mapSalesInvoiceToDocument, openDocumentPrintWindow } from '../../lib/documentPrint.js'
 import PageHeader from '../../components/PageHeader.js'
 import DataTable from '../../components/DataTable.js'
 import FormModal from '../../components/FormModal.js'
@@ -260,38 +261,8 @@ export default function Invoices() {
 
   const printInvoice = () => {
     if (!viewData) return
-    const printWin = window.open('', '_blank', 'width=800,height=900')
-    if (!printWin) { alert('Please allow pop-ups for printing'); return }
-    const inv = viewData; const s = settings
-    printWin.document.write(`<!DOCTYPE html><html><head><title>Invoice ${inv.invoice_number}</title>
-<style>body{font-family:Arial,sans-serif;font-size:12px;padding:40px;max-width:800px;margin:auto}
-table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;text-align:left;border-bottom:1px solid #ddd}
-th{background:#f5f5f5}.right{text-align:right}.bold{font-weight:bold}.total{font-size:14px;font-weight:bold}
-.header{text-align:center;margin-bottom:30px}.header h1{margin:0;font-size:20px}.header p{margin:2px 0;color:#555}
-.section{margin:20px 0}.section h3{border-bottom:2px solid #000;padding-bottom:4px}.amount-words{margin-top:20px;font-style:italic;border-top:1px solid #ddd;padding-top:10px}
-.signatures{margin-top:60px;display:flex;justify-content:space-between}
-.signatures div{text-align:center;border-top:1px solid #000;padding-top:8px;width:200px}
-@media print{body{padding:20px}}</style></head><body>
-<div class="header"><h1>${s.company_name || 'TAX INVOICE'}</h1>
-<p>${s.company_address || ''}</p><p>NTN: ${s.company_ntn || '-'} | STRN: ${s.company_strn || '-'}</p>
-<h2 style="margin-top:10px">TAX INVOICE</h2>
-<p style="font-size:14px"><strong>${inv.invoice_number}</strong> | Date: ${formatDate(inv.date)}</p></div>
-<div class="section"><h3>Bill To</h3><p><strong>${inv.customer_name}</strong><br>${inv.customer_address || ''}<br>NTN: ${inv.customer_ntn || '-'} | STRN: ${inv.customer_strn || '-'}</p></div>
-<div class="section"><h3>Items</h3>
-<table><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit</th><th>Rate</th><th>Amount</th><th>GST%</th><th>GST Amt</th></tr></thead>
-<tbody>${(inv.items || []).map((li: any, i: number) => `<tr><td>${i+1}</td><td>${li.description}</td><td>${li.quantity}</td><td>${li.unit || '-'}</td><td class="right">${formatCurrency(li.rate)}</td><td class="right">${formatCurrency(li.amount)}</td><td class="right">${li.gst_percent}%</td><td class="right">${formatCurrency(li.gst_amount)}</td></tr>`).join('')}</tbody></table></div>
-<div style="margin-left:auto;width:300px">
-<p class="right">Subtotal: ${formatCurrency(inv.subtotal)}</p>${inv.discount_amount > 0 ? `<p class="right">Discount: -${formatCurrency(inv.discount_amount)}</p>` : ''}
-<p class="right">Total Before Tax: ${formatCurrency(inv.total_before_tax)}</p>
-<p class="right">GST: ${formatCurrency(inv.gst_amount)}</p>${inv.further_tax_amount > 0 ? `<p class="right">Further Tax: ${formatCurrency(inv.further_tax_amount)}</p>` : ''}
-<p class="right total">Grand Total: ${formatCurrency(inv.grand_total)}</p></div>
-${inv.withholding_tax_amount > 0 ? `<p style="font-size:11px;color:#666">Note: Customer may withhold ${formatCurrency(inv.withholding_tax_amount)} as income tax.</p>` : ''}
-<div class="amount-words">Amount in Words: ${numberToWords(inv.grand_total)}</div>
-<div class="signatures"><div>Prepared By</div><div>Authorized Signatory</div></div>
-<p style="text-align:center;margin-top:40px;font-size:10px;color:#999">This is a computer-generated invoice.</p>
-</body></html>`)
-    printWin.document.close()
-    setTimeout(() => { printWin.print() }, 500)
+    const doc = mapSalesInvoiceToDocument(viewData, settings)
+    openDocumentPrintWindow(buildDocumentPrintHtml(doc), `Invoice ${viewData.invoice_number}`)
   }
 
   const defaultGst = Number(settings.default_gst_percent || 18)

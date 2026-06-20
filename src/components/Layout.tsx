@@ -5,11 +5,11 @@ import ToastContainer from './ToastContainer.js'
 
 export default function Layout() {
   return (
-    <div className="flex h-full w-full bg-gray-50">
+    <div className="flex h-full min-h-0 w-full bg-gray-50">
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />
-        <main className="flex-1 overflow-auto p-6">
+        <main className="scrollbar-main flex-1 overflow-y-auto overscroll-contain p-6">
           <Outlet />
         </main>
       </div>

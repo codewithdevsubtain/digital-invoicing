@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
 import { getDb, logActivity } from '../database/db.js'
+import { assertAuth } from './guard.js'
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 const ITEM_TYPE_PREFIXES: Record<string, string> = {
@@ -79,8 +79,8 @@ function registerUnitHandlers() {
     return getDb().prepare('SELECT * FROM units ORDER BY name').all()
   })
 
-  ipcMain.handle('inventory:createUnit', async (_event, userId: number, data: { name: string; short_code: string }) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:createUnit', async (_event, token: string, userId: number, data: { name: string; short_code: string }) => {
+    assertUser(token, userId)
     const { name, short_code } = data
     if (!name || !short_code) throw new Error('Name and short code are required')
     try {
@@ -93,8 +93,8 @@ function registerUnitHandlers() {
     }
   })
 
-  ipcMain.handle('inventory:updateUnit', async (_event, userId: number, id: number, data: { name?: string; short_code?: string }) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:updateUnit', async (_event, token: string, userId: number, id: number, data: { name?: string; short_code?: string }) => {
+    assertUser(token, userId)
     const updates: string[] = []
     const values: unknown[] = []
     if (data.name !== undefined) { updates.push('name = ?'); values.push(data.name) }
@@ -111,8 +111,8 @@ function registerUnitHandlers() {
     }
   })
 
-  ipcMain.handle('inventory:deleteUnit', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:deleteUnit', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const used = getDb().prepare('SELECT COUNT(*) as c FROM items WHERE unit_id = ?').get(id) as { c: number }
     if (used.c > 0) throw new Error('Cannot delete: unit is in use by one or more items')
     getDb().prepare('DELETE FROM units WHERE id = ?').run(id)
@@ -129,8 +129,8 @@ function registerCategoryHandlers() {
     return getDb().prepare('SELECT * FROM item_categories ORDER BY name').all()
   })
 
-  ipcMain.handle('inventory:createCategory', async (_event, userId: number, data: { name: string; parent_id?: number | null; item_type?: string | null }) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:createCategory', async (_event, token: string, userId: number, data: { name: string; parent_id?: number | null; item_type?: string | null }) => {
+    assertUser(token, userId)
     const { name, parent_id, item_type } = data
     if (!name) throw new Error('Category name is required')
     const result = getDb().prepare('INSERT INTO item_categories (name, parent_id, item_type) VALUES (?, ?, ?)').run(name, parent_id ?? null, item_type ?? null)
@@ -138,8 +138,8 @@ function registerCategoryHandlers() {
     return { id: result.lastInsertRowid }
   })
 
-  ipcMain.handle('inventory:updateCategory', async (_event, userId: number, id: number, data: { name?: string; parent_id?: number | null; item_type?: string | null }) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:updateCategory', async (_event, token: string, userId: number, id: number, data: { name?: string; parent_id?: number | null; item_type?: string | null }) => {
+    assertUser(token, userId)
     const updates: string[] = []
     const values: unknown[] = []
     if (data.name !== undefined) { updates.push('name = ?'); values.push(data.name) }
@@ -152,8 +152,8 @@ function registerCategoryHandlers() {
     return true
   })
 
-  ipcMain.handle('inventory:deleteCategory', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:deleteCategory', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const children = getDb().prepare('SELECT COUNT(*) as c FROM item_categories WHERE parent_id = ?').get(id) as { c: number }
     if (children.c > 0) throw new Error('Cannot delete: category has subcategories')
     const used = getDb().prepare('SELECT COUNT(*) as c FROM items WHERE category_id = ?').get(id) as { c: number }
@@ -172,8 +172,8 @@ function registerWarehouseHandlers() {
     return getDb().prepare('SELECT * FROM warehouses ORDER BY name').all()
   })
 
-  ipcMain.handle('inventory:createWarehouse', async (_event, userId: number, data: { name: string; location?: string }) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:createWarehouse', async (_event, token: string, userId: number, data: { name: string; location?: string }) => {
+    assertUser(token, userId)
     const { name, location } = data
     if (!name) throw new Error('Warehouse name is required')
     const result = getDb().prepare('INSERT INTO warehouses (name, location) VALUES (?, ?)').run(name, location ?? null)
@@ -181,8 +181,8 @@ function registerWarehouseHandlers() {
     return { id: result.lastInsertRowid }
   })
 
-  ipcMain.handle('inventory:updateWarehouse', async (_event, userId: number, id: number, data: { name?: string; location?: string }) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:updateWarehouse', async (_event, token: string, userId: number, id: number, data: { name?: string; location?: string }) => {
+    assertUser(token, userId)
     const updates: string[] = []
     const values: unknown[] = []
     if (data.name !== undefined) { updates.push('name = ?'); values.push(data.name) }
@@ -194,8 +194,8 @@ function registerWarehouseHandlers() {
     return true
   })
 
-  ipcMain.handle('inventory:toggleWarehouse', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:toggleWarehouse', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const current = getDb().prepare('SELECT is_active FROM warehouses WHERE id = ?').get(id) as { is_active: number } | undefined
     if (!current) throw new Error('Warehouse not found')
     const newStatus = current.is_active ? 0 : 1
@@ -209,14 +209,14 @@ function registerWarehouseHandlers() {
 // ITEMS
 // =====================================================================
 function registerItemHandlers() {
-  ipcMain.handle('inventory:listItems', async (_event, userId: number, filters?: {
+  ipcMain.handle('inventory:listItems', async (_event, token: string, userId: number, filters?: {
     item_type?: string
     category_id?: number
     search?: string
     low_stock_only?: boolean
     is_active?: boolean | null
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = []
     const values: unknown[] = []
 
@@ -275,8 +275,8 @@ function registerItemHandlers() {
     return result
   })
 
-  ipcMain.handle('inventory:getItem', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:getItem', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const item = getDb()
       .prepare(`
         SELECT i.*, u.name as unit_name, u.short_code as unit_short_code,
@@ -291,7 +291,7 @@ function registerItemHandlers() {
     return item
   })
 
-  ipcMain.handle('inventory:createItem', async (_event, userId: number, data: {
+  ipcMain.handle('inventory:createItem', async (_event, token: string, userId: number, data: {
     name: string
     category_id?: number
     item_type: string
@@ -302,7 +302,7 @@ function registerItemHandlers() {
     hsn_code?: string
     description?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     if (!data.name) throw new Error('Item name is required')
     const itemCode = generateItemCode(data.item_type)
     const result = getDb()
@@ -326,7 +326,7 @@ function registerItemHandlers() {
     return { id: result.lastInsertRowid, item_code: itemCode }
   })
 
-  ipcMain.handle('inventory:updateItem', async (_event, userId: number, id: number, data: {
+  ipcMain.handle('inventory:updateItem', async (_event, token: string, userId: number, id: number, data: {
     name?: string
     category_id?: number
     item_type?: string
@@ -337,7 +337,7 @@ function registerItemHandlers() {
     hsn_code?: string
     description?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const updates: string[] = []
     const values: unknown[] = []
 
@@ -355,8 +355,8 @@ function registerItemHandlers() {
     return true
   })
 
-  ipcMain.handle('inventory:toggleItem', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:toggleItem', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const current = getDb().prepare('SELECT is_active FROM items WHERE id = ?').get(id) as { is_active: number } | undefined
     if (!current) throw new Error('Item not found')
     const newStatus = current.is_active ? 0 : 1
@@ -370,8 +370,8 @@ function registerItemHandlers() {
 // STOCK
 // =====================================================================
 function registerStockHandlers() {
-  ipcMain.handle('inventory:getItemStock', async (_event, userId: number, itemId: number) => {
-    assertUser(userId)
+  ipcMain.handle('inventory:getItemStock', async (_event, token: string, userId: number, itemId: number) => {
+    assertUser(token, userId)
     const perWarehouse = getDb()
       .prepare(`
         SELECT is2.*, w.name as warehouse_name
@@ -387,12 +387,12 @@ function registerStockHandlers() {
     return { per_warehouse: perWarehouse, total }
   })
 
-  ipcMain.handle('inventory:getAllStockLevels', async (_event, userId: number, filters?: {
+  ipcMain.handle('inventory:getAllStockLevels', async (_event, token: string, userId: number, filters?: {
     item_type?: string
     warehouse_id?: number
     below_reorder_only?: boolean
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = []
     const values: unknown[] = []
 
@@ -429,12 +429,12 @@ function registerStockHandlers() {
     return rows
   })
 
-  ipcMain.handle('inventory:getItemStockHistory', async (_event, userId: number, itemId: number, filters?: {
+  ipcMain.handle('inventory:getItemStockHistory', async (_event, token: string, userId: number, itemId: number, filters?: {
     warehouse_id?: number
     date_from?: string
     date_to?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = ['sm.item_id = ?']
     const values: unknown[] = [itemId]
 
@@ -472,7 +472,7 @@ function registerStockHandlers() {
     })
   })
 
-  ipcMain.handle('inventory:adjustStock', async (_event, userId: number, data: {
+  ipcMain.handle('inventory:adjustStock', async (_event, token: string, userId: number, data: {
     item_id: number
     warehouse_id: number
     quantity: number
@@ -480,7 +480,7 @@ function registerStockHandlers() {
     reason?: string
     date: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const { item_id, warehouse_id, quantity, type, reason, date } = data
     if (quantity <= 0) throw new Error('Quantity must be greater than zero')
     if (!date) throw new Error('Date is required')
@@ -525,7 +525,7 @@ function registerStockHandlers() {
       .all()
   })
 
-  ipcMain.handle('inventory:listAllStockMovements', async (_event, userId: number, filters?: {
+  ipcMain.handle('inventory:listAllStockMovements', async (_event, token: string, userId: number, filters?: {
     item_id?: number
     warehouse_id?: number
     movement_type?: string
@@ -533,7 +533,7 @@ function registerStockHandlers() {
     date_to?: string
     reference_type?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = []
     const values: unknown[] = []
 

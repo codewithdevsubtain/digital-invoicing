@@ -1,10 +1,10 @@
 import { ipcMain } from 'electron'
 import { getDb, logActivity, runTransaction } from '../database/db.js'
 import { recordStockMovement } from './inventory.js'
+import { assertAuth } from './guard.js'
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function round2(n: number): number {
@@ -35,12 +35,12 @@ function getCoaId(code: string): number {
 // BOM
 // =====================================================================
 function registerBOMHandlers() {
-  ipcMain.handle('bom:create', async (_event, userId: number, data: {
+  ipcMain.handle('bom:create', async (_event, token: string, userId: number, data: {
     finished_item_id: number; name: string; output_quantity: number
     labor_cost_estimate?: number; overhead_cost_estimate?: number; notes?: string
     components: Array<{ raw_material_item_id: number; quantity_required: number; wastage_percent?: number }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const result = getDb().prepare(
         'INSERT INTO bom (finished_item_id, name, output_quantity, labor_cost_estimate, overhead_cost_estimate, notes) VALUES (?, ?, ?, ?, ?, ?)'
@@ -59,7 +59,7 @@ function registerBOMHandlers() {
     })
   })
 
-  ipcMain.handle('bom:list', async (_event, _userId: number, filters?: { finished_item_id?: number }) => {
+  ipcMain.handle('bom:list', async (_event, token: string, _userId: number, filters?: { finished_item_id?: number }) => {
     const where: string[] = []
     const values: unknown[] = []
     if (filters?.finished_item_id) {
@@ -75,7 +75,7 @@ function registerBOMHandlers() {
     `).all(...values)
   })
 
-  ipcMain.handle('bom:getById', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('bom:getById', async (_event, token: string, _userId: number, id: number) => {
     const bom = getDb().prepare(`
       SELECT b.*, i.name as finished_item_name, i.item_code as finished_item_code, i.unit_id, u.short_code as unit_short_code
       FROM bom b
@@ -95,12 +95,12 @@ function registerBOMHandlers() {
     return { ...bom, components }
   })
 
-  ipcMain.handle('bom:update', async (_event, userId: number, id: number, data: {
+  ipcMain.handle('bom:update', async (_event, token: string, userId: number, id: number, data: {
     name?: string; output_quantity?: number
     labor_cost_estimate?: number; overhead_cost_estimate?: number; notes?: string
     components?: Array<{ raw_material_item_id: number; quantity_required: number; wastage_percent?: number }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const sets: string[] = []; const vals: unknown[] = []
       if (data.name !== undefined) { sets.push('name = ?'); vals.push(data.name) }
@@ -121,8 +121,8 @@ function registerBOMHandlers() {
     })
   })
 
-  ipcMain.handle('bom:deactivate', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('bom:deactivate', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const current = getDb().prepare('SELECT is_active FROM bom WHERE id = ?').get(id) as { is_active: number } | undefined
     if (!current) throw new Error('BOM not found')
     const newStatus = current.is_active ? 0 : 1
@@ -131,7 +131,7 @@ function registerBOMHandlers() {
     return { is_active: newStatus }
   })
 
-  ipcMain.handle('bom:costEstimate', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('bom:costEstimate', async (_event, token: string, _userId: number, id: number) => {
     const bom = getDb().prepare('SELECT * FROM bom WHERE id = ?').get(id) as {
       output_quantity: number; labor_cost_estimate: number; overhead_cost_estimate: number
     } | undefined
@@ -171,11 +171,11 @@ function registerBOMHandlers() {
 // FABRICATION ORDERS
 // =====================================================================
 function registerFabricationOrderHandlers() {
-  ipcMain.handle('fab:create', async (_event, userId: number, data: {
+  ipcMain.handle('fab:create', async (_event, token: string, userId: number, data: {
     bom_id: number; quantity_to_produce: number; warehouse_id: number
     date_started?: string; notes?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const bom = getDb().prepare('SELECT * FROM bom WHERE id = ?').get(data.bom_id) as {
         finished_item_id: number; output_quantity: number
@@ -213,10 +213,10 @@ function registerFabricationOrderHandlers() {
     })
   })
 
-  ipcMain.handle('fab:list', async (_event, userId: number, filters?: {
+  ipcMain.handle('fab:list', async (_event, token: string, userId: number, filters?: {
     status?: string; date_from?: string; date_to?: string; finished_item_id?: number
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = []
     const vals: unknown[] = []
     if (filters?.status) { where.push('fo.status = ?'); vals.push(filters.status) }
@@ -235,7 +235,7 @@ function registerFabricationOrderHandlers() {
     `).all(...vals)
   })
 
-  ipcMain.handle('fab:getById', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('fab:getById', async (_event, token: string, _userId: number, id: number) => {
     const order = getDb().prepare(`
       SELECT fo.*, i.name as finished_item_name, i.item_code as finished_item_code, b.name as bom_name, w.name as warehouse_name
       FROM fabrication_orders fo
@@ -258,8 +258,8 @@ function registerFabricationOrderHandlers() {
     return { ...order, materials }
   })
 
-  ipcMain.handle('fab:start', async (_event, userId: number, id: number, overrideLowStock?: boolean) => {
-    assertUser(userId)
+  ipcMain.handle('fab:start', async (_event, token: string, userId: number, id: number, overrideLowStock?: boolean) => {
+    assertUser(token, userId)
     return runTransaction(() => {
       const order = getDb().prepare('SELECT * FROM fabrication_orders WHERE id = ?').get(id) as Record<string, unknown> | undefined
       if (!order) throw new Error('Fabrication order not found')
@@ -296,12 +296,12 @@ function registerFabricationOrderHandlers() {
     })
   })
 
-  ipcMain.handle('fab:complete', async (_event, userId: number, id: number, data: {
+  ipcMain.handle('fab:complete', async (_event, token: string, userId: number, id: number, data: {
     quantity_produced: number
     actual_labor_cost?: number; actual_overhead_cost?: number
     materials?: Array<{ id: number; quantity_consumed: number }>
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const order = getDb().prepare('SELECT * FROM fabrication_orders WHERE id = ?').get(id) as Record<string, unknown> | undefined
       if (!order) throw new Error('Fabrication order not found')
@@ -396,8 +396,8 @@ function registerFabricationOrderHandlers() {
     })
   })
 
-  ipcMain.handle('fab:cancel', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('fab:cancel', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     return runTransaction(() => {
       const order = getDb().prepare('SELECT * FROM fabrication_orders WHERE id = ?').get(id) as Record<string, unknown> | undefined
       if (!order) throw new Error('Fabrication order not found')

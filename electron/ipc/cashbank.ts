@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
 import { getDb, logActivity, runTransaction, recordCashBankTransaction } from '../database/db.js'
+import { assertAuth } from './guard.js'
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function round2(n: number): number {
@@ -24,10 +24,10 @@ function registerBankAccountHandlers() {
     return getDb().prepare('SELECT * FROM bank_accounts ORDER BY account_name').all()
   })
 
-  ipcMain.handle('cashbank:bank:create', async (_event, userId: number, data: {
+  ipcMain.handle('cashbank:bank:create', async (_event, token: string, userId: number, data: {
     account_name: string; bank_name?: string; account_number?: string; branch?: string; opening_balance?: number
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const ob = data.opening_balance ?? 0
       const result = getDb().prepare(`
@@ -43,8 +43,8 @@ function registerBankAccountHandlers() {
     })
   })
 
-  ipcMain.handle('cashbank:bank:update', async (_event, userId: number, id: number, data: Record<string, unknown>) => {
-    assertUser(userId)
+  ipcMain.handle('cashbank:bank:update', async (_event, token: string, userId: number, id: number, data: Record<string, unknown>) => {
+    assertUser(token, userId)
     const sets: string[] = []; const vals: unknown[] = []
     for (const k of ['account_name', 'bank_name', 'account_number', 'branch']) {
       if (data[k] !== undefined) { sets.push(`${k} = ?`); vals.push(data[k]) }
@@ -56,8 +56,8 @@ function registerBankAccountHandlers() {
     return true
   })
 
-  ipcMain.handle('cashbank:bank:toggleActive', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('cashbank:bank:toggleActive', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const cur = getDb().prepare('SELECT is_active FROM bank_accounts WHERE id = ?').get(id) as { is_active: number } | undefined
     if (!cur) throw new Error('Account not found')
     const ns = cur.is_active ? 0 : 1
@@ -75,10 +75,10 @@ function registerCashAccountHandlers() {
     return getDb().prepare('SELECT * FROM cash_accounts ORDER BY account_name').all()
   })
 
-  ipcMain.handle('cashbank:cash:create', async (_event, userId: number, data: {
+  ipcMain.handle('cashbank:cash:create', async (_event, token: string, userId: number, data: {
     account_name: string; opening_balance?: number
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const ob = data.opening_balance ?? 0
       const result = getDb().prepare(`
@@ -94,16 +94,16 @@ function registerCashAccountHandlers() {
     })
   })
 
-  ipcMain.handle('cashbank:cash:update', async (_event, userId: number, id: number, data: Record<string, unknown>) => {
-    assertUser(userId)
+  ipcMain.handle('cashbank:cash:update', async (_event, token: string, userId: number, id: number, data: Record<string, unknown>) => {
+    assertUser(token, userId)
     if (data.account_name === undefined) throw new Error('No fields to update')
     getDb().prepare('UPDATE cash_accounts SET account_name = ? WHERE id = ?').run(data.account_name, id)
     logActivity(userId, 'update', 'cashbank', id, `Updated cash account #${id}`)
     return true
   })
 
-  ipcMain.handle('cashbank:cash:toggleActive', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('cashbank:cash:toggleActive', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const cur = getDb().prepare('SELECT is_active FROM cash_accounts WHERE id = ?').get(id) as { is_active: number } | undefined
     if (!cur) throw new Error('Account not found')
     const ns = cur.is_active ? 0 : 1
@@ -117,10 +117,10 @@ function registerCashAccountHandlers() {
 // TRANSACTIONS
 // =====================================================================
 function registerTransactionHandlers() {
-  ipcMain.handle('cashbank:transactions', async (_event, userId: number, data: {
+  ipcMain.handle('cashbank:transactions', async (_event, token: string, userId: number, data: {
     account_type: string; account_id: number; date_from?: string; date_to?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = ['cbt.account_type = ?', 'cbt.account_id = ?']
     const vals: unknown[] = [data.account_type, data.account_id]
     if (data.date_from) { where.push('cbt.date >= ?'); vals.push(data.date_from) }
@@ -140,11 +140,11 @@ function registerTransactionHandlers() {
     return { cash: cashAccounts, bank: bankAccounts, total_cash_position: round2(cashTotal + bankTotal) }
   })
 
-  ipcMain.handle('cashbank:manualTransaction', async (_event, userId: number, data: {
+  ipcMain.handle('cashbank:manualTransaction', async (_event, token: string, userId: number, data: {
     account_type: string; account_id: number; date: string
     transaction_type: string; amount: number; description?: string; category?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       if (data.amount <= 0) throw new Error('Amount must be greater than zero')
       recordCashBankTransaction(
@@ -187,11 +187,11 @@ function registerTransactionHandlers() {
     })
   })
 
-  ipcMain.handle('cashbank:transfer', async (_event, userId: number, data: {
+  ipcMain.handle('cashbank:transfer', async (_event, token: string, userId: number, data: {
     from_type: string; from_id: number; to_type: string; to_id: number
     amount: number; date: string; description?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       if (data.amount <= 0) throw new Error('Amount must be greater than zero')
       const desc = data.description ?? 'Fund transfer'

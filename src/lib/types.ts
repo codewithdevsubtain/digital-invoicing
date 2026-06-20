@@ -42,6 +42,8 @@ export interface ActivityLog {
   record_id: number | null
   details: string | null
   timestamp: string
+  username?: string
+  full_name?: string
 }
 
 // =====================================================================
@@ -669,6 +671,9 @@ export interface SalesInvoice {
   amount_received: number
   balance_due: number
   payment_status: SalesPaymentStatus
+  is_voided?: number
+  void_reason?: string | null
+  voided_at?: string | null
   notes: string | null
   created_by: number | null
   created_at: string
@@ -698,6 +703,7 @@ export interface CustomerReceipt {
   reference_no: string | null
   sales_invoice_id: number | null
   notes: string | null
+  withholding_tax_deducted?: number
   created_by: number | null
   created_at: string
 }

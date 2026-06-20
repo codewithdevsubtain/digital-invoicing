@@ -47,7 +47,7 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
 
   useEffect(() => {
     load()
-  }, [user, customerId, dateFrom, dateTo])
+  }, [user, customerId, dateFrom, dateTo, passedCustomer])
 
   const exportCSV = () => {
     if (!customer) return

@@ -25,7 +25,7 @@ interface SafeUser {
   created_at: string
 }
 
-const sessions = new Map<string, { userId: number; expiresAt: number }>()
+export const sessions = new Map<string, { userId: number; expiresAt: number }>()
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7 // 7 days for "remember me"
 const SHORT_SESSION_TTL_MS = 1000 * 60 * 60 * 4 // 4 hours otherwise
 
@@ -52,6 +52,22 @@ function cleanExpiredSessions() {
       sessions.delete(token)
     }
   }
+}
+
+export function validateSessionToken(token: string | null | undefined): number {
+  if (!token) throw new Error('Not authenticated')
+  cleanExpiredSessions()
+  const session = sessions.get(token)
+  if (!session || session.expiresAt < Date.now()) {
+    if (token) sessions.delete(token)
+    throw new Error('Session expired')
+  }
+  const row = getDb().prepare('SELECT id FROM users WHERE id = ? AND is_active = 1').get(session.userId) as { id: number } | undefined
+  if (!row) {
+    sessions.delete(token)
+    throw new Error('Invalid user')
+  }
+  return session.userId
 }
 
 export function registerAuthHandlers() {
@@ -107,7 +123,8 @@ export function registerAuthHandlers() {
 
   ipcMain.handle(
     'auth:changePassword',
-    async (_event, userId: number, oldPassword: string, newPassword: string) => {
+    async (_event, token: string, userId: number, oldPassword: string, newPassword: string) => {
+      if (validateSessionToken(token) !== userId) throw new Error('Unauthorized')
       const row = getDb().prepare('SELECT * FROM users WHERE id = ?').get(userId) as User | undefined
       if (!row) throw new Error('User not found')
 

@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { getDb, logActivity } from '../database/db.js'
+import { assertAuth } from './guard.js'
 
 interface Customer {
   id: number
@@ -33,9 +34,8 @@ interface CustomerLedger {
   created_at: string
 }
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function generateCustomerCode(): string {
@@ -70,10 +70,11 @@ export function registerCustomerHandlers() {
     'customers:list',
     async (
       _event,
+      token: string,
       userId: number,
       filters: { search?: string; isActive?: boolean | null } = {}
     ) => {
-      assertUser(userId)
+      assertUser(token, userId)
       const where: string[] = []
       const values: unknown[] = []
 
@@ -100,8 +101,8 @@ export function registerCustomerHandlers() {
     }
   )
 
-  ipcMain.handle('customers:get', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('customers:get', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const row = getDb().prepare('SELECT * FROM customers WHERE id = ?').get(id) as Customer | undefined
     if (!row) return null
     const balance = getDb()
@@ -114,6 +115,7 @@ export function registerCustomerHandlers() {
     'customers:create',
     async (
       _event,
+      token: string,
       userId: number,
       data: {
         name: string
@@ -129,7 +131,7 @@ export function registerCustomerHandlers() {
         is_active?: number
       }
     ) => {
-      assertUser(userId)
+      assertUser(token, userId)
       const code = generateCustomerCode()
       const openingBalance = Number(data.opening_balance ?? 0)
       const openingType = data.opening_balance_type ?? 'debit'
@@ -166,6 +168,7 @@ export function registerCustomerHandlers() {
     'customers:update',
     async (
       _event,
+      token: string,
       userId: number,
       id: number,
       data: {
@@ -182,7 +185,7 @@ export function registerCustomerHandlers() {
         is_active?: number
       }
     ) => {
-      assertUser(userId)
+      assertUser(token, userId)
       const sets: string[] = []
       const values: unknown[] = []
 
@@ -223,8 +226,8 @@ export function registerCustomerHandlers() {
     }
   )
 
-  ipcMain.handle('customers:toggleActive', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('customers:toggleActive', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const customer = getDb().prepare('SELECT is_active, name FROM customers WHERE id = ?').get(id) as
       | { is_active: number; name: string }
       | undefined
@@ -240,11 +243,12 @@ export function registerCustomerHandlers() {
     'customers:ledger',
     async (
       _event,
+      token: string,
       userId: number,
       id: number,
       filters: { dateFrom?: string; dateTo?: string } = {}
     ) => {
-      assertUser(userId)
+      assertUser(token, userId)
       const where: string[] = ['cl.customer_id = ?']
       const values: unknown[] = [id]
 
@@ -271,16 +275,16 @@ export function registerCustomerHandlers() {
     }
   )
 
-  ipcMain.handle('customers:balance', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('customers:balance', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const row = getDb()
       .prepare('SELECT COALESCE(SUM(debit - credit), 0) AS balance FROM customer_ledger WHERE customer_id = ?')
       .get(id) as { balance: number }
     return row.balance
   })
 
-  ipcMain.handle('customers:summary', async (_event, userId: number) => {
-    assertUser(userId)
+  ipcMain.handle('customers:summary', async (_event, token: string, userId: number) => {
+    assertUser(token, userId)
     const rows = getDb()
       .prepare(
         `
@@ -299,7 +303,7 @@ export function registerCustomerHandlers() {
         `
         SELECT COUNT(DISTINCT customer_id) AS count
         FROM sales_invoices
-        WHERE payment_status IN ('unpaid', 'partial') AND date < date('now')
+        WHERE payment_status IN ('unpaid', 'partial') AND date < date('now') AND is_voided = 0
       `
       )
       .get() as { count: number }
@@ -311,8 +315,8 @@ export function registerCustomerHandlers() {
     }
   })
 
-  ipcMain.handle('customers:projects', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('customers:projects', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     return getDb()
       .prepare('SELECT * FROM projects WHERE customer_id = ? ORDER BY created_at DESC')
       .all(id) as Customer[]

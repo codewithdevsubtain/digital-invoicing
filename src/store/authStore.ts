@@ -16,11 +16,13 @@ interface SafeUser {
 
 const TOKEN_KEY = 'hvac_erp_token'
 const REMEMBER_KEY = 'hvac_erp_remember'
+const SESSION_TOKEN_KEY = 'hvac_erp_session_token'
 
 interface AuthState {
   user: SafeUser | null
   token: string | null
   loading: boolean
+  sessionChecked: boolean
   error: string | null
   forcePasswordChange: boolean
 
@@ -33,63 +35,112 @@ interface AuthState {
 
 function getStoredToken(): string | null {
   const remember = localStorage.getItem(REMEMBER_KEY)
-  if (remember !== 'true') {
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(REMEMBER_KEY)
-    return null
+  if (remember === 'true') {
+    return localStorage.getItem(TOKEN_KEY)
   }
-  return localStorage.getItem(TOKEN_KEY)
+  return sessionStorage.getItem(SESSION_TOKEN_KEY)
+}
+
+function storeToken(token: string, rememberMe: boolean): void {
+  if (rememberMe) {
+    localStorage.setItem(TOKEN_KEY, token)
+    localStorage.setItem(REMEMBER_KEY, 'true')
+    sessionStorage.removeItem(SESSION_TOKEN_KEY)
+  } else {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, token)
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.setItem(REMEMBER_KEY, 'false')
+  }
+}
+
+function clearStoredToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(REMEMBER_KEY)
+  sessionStorage.removeItem(SESSION_TOKEN_KEY)
+}
+
+let sessionLoadPromise: Promise<void> | null = null
+
+async function waitForElectron(maxMs = 8000): Promise<boolean> {
+  if (typeof window === 'undefined') return false
+  const start = Date.now()
+  while (Date.now() - start < maxMs) {
+    if (typeof window.electronAPI?.invoke === 'function') return true
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return false
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
   loading: false,
+  sessionChecked: false,
   error: null,
   forcePasswordChange: false,
 
   loadSession: async () => {
-    const token = getStoredToken()
-    if (!token) {
-      set({ loading: false })
-      return
-    }
-    set({ loading: true })
-    try {
-      const user = await api.auth.getCurrentUser(token)
-      if (user) {
-        set({ user, token, loading: false, forcePasswordChange: user.force_password_change === 1 })
-      } else {
-        localStorage.removeItem(TOKEN_KEY)
-        localStorage.removeItem(REMEMBER_KEY)
-        set({ user: null, token: null, loading: false })
+    if (sessionLoadPromise) return sessionLoadPromise
+
+    sessionLoadPromise = (async () => {
+      set({ loading: true, error: null })
+      try {
+        const electronReady = await waitForElectron()
+        if (!electronReady) {
+          clearStoredToken()
+          set({ user: null, token: null })
+          return
+        }
+
+        const token = getStoredToken()
+        if (!token) {
+          set({ user: null, token: null })
+          return
+        }
+
+        const user = await api.auth.getCurrentUser(token)
+        if (user) {
+          set({
+            user,
+            token,
+            forcePasswordChange: user.force_password_change === 1,
+          })
+        } else {
+          clearStoredToken()
+          set({ user: null, token: null })
+        }
+      } catch {
+        clearStoredToken()
+        set({ user: null, token: null })
+      } finally {
+        set({ loading: false, sessionChecked: true })
+        sessionLoadPromise = null
       }
-    } catch (err) {
-      localStorage.removeItem(TOKEN_KEY)
-      localStorage.removeItem(REMEMBER_KEY)
-      set({ user: null, token: null, loading: false, error: 'Session expired' })
-    }
+    })()
+
+    return sessionLoadPromise
   },
 
   login: async (username, password, rememberMe) => {
     set({ loading: true, error: null })
     try {
-      const result = await api.auth.login(username, password, rememberMe)
-      if (rememberMe) {
-        localStorage.setItem(TOKEN_KEY, result.token)
-        localStorage.setItem(REMEMBER_KEY, 'true')
-      } else {
-        localStorage.setItem(TOKEN_KEY, result.token)
-        localStorage.setItem(REMEMBER_KEY, 'false')
+      const electronReady = await waitForElectron()
+      if (!electronReady) {
+        throw new Error('Desktop app is not ready. Please use the HVAC ERP window from npm run dev.')
       }
+
+      const result = await api.auth.login(username, password, rememberMe)
+      storeToken(result.token, rememberMe)
       set({
         user: result.user,
         token: result.token,
-        loading: false,
         forcePasswordChange: result.forcePasswordChange,
+        sessionChecked: true,
       })
     } catch (err) {
-      set({ loading: false, error: err instanceof Error ? err.message : 'Login failed' })
+      set({ error: err instanceof Error ? err.message : 'Login failed' })
+    } finally {
+      set({ loading: false })
     }
   },
 
@@ -102,9 +153,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // ignore
       }
     }
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(REMEMBER_KEY)
-    set({ user: null, token: null, forcePasswordChange: false })
+    clearStoredToken()
+    set({ user: null, token: null, forcePasswordChange: false, sessionChecked: true })
   },
 
   changePassword: async (oldPassword, newPassword) => {
@@ -141,6 +191,11 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   ],
   technician: ['dashboard', 'projects', 'hr-payroll'],
   viewer: ['dashboard', 'reports'],
+}
+
+export function routeKeyFromPath(pathname: string): string {
+  const segment = pathname.replace(/^\//, '').split('/')[0] || 'dashboard'
+  return segment === '' ? 'dashboard' : segment
 }
 
 export function hasAccess(role: UserRole, route: string): boolean {

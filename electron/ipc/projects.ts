@@ -1,10 +1,10 @@
 import { ipcMain } from 'electron'
-import { getDb, logActivity, runTransaction } from '../database/db.js'
+import { getDb, logActivity, runTransaction, recordCashBankTransaction } from '../database/db.js'
 import { recordStockMovement } from './inventory.js'
+import { assertAuth } from './guard.js'
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function round2(n: number): number {
@@ -34,10 +34,10 @@ function getCoaId(code: string): number {
 // PROJECT CRUD
 // =====================================================================
 function registerProjectCRUD() {
-  ipcMain.handle('projects:list', async (_event, userId: number, filters?: {
+  ipcMain.handle('projects:list', async (_event, token: string, userId: number, filters?: {
     customer_id?: number; status?: string; search?: string; date_from?: string; date_to?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const where: string[] = []
     const vals: unknown[] = []
     if (filters?.customer_id) { where.push('p.customer_id = ?'); vals.push(filters.customer_id) }
@@ -59,7 +59,7 @@ function registerProjectCRUD() {
     `).all(...vals)
   })
 
-  ipcMain.handle('projects:get', async (_event, _userId: number, id: number) => {
+  ipcMain.handle('projects:get', async (_event, token: string, _userId: number, id: number) => {
     const project = getDb().prepare(`
       SELECT p.*, c.name as customer_name
       FROM projects p
@@ -69,11 +69,11 @@ function registerProjectCRUD() {
     return project ?? null
   })
 
-  ipcMain.handle('projects:create', async (_event, userId: number, data: {
+  ipcMain.handle('projects:create', async (_event, token: string, userId: number, data: {
     project_name: string; customer_id?: number; site_address?: string; description?: string
     start_date?: string; expected_end_date?: string; contract_value?: number; status?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     if (!data.project_name) throw new Error('Project name is required')
     const code = generateProjectCode()
     const result = getDb().prepare(`
@@ -89,8 +89,8 @@ function registerProjectCRUD() {
     return { id: projectId, project_code: code }
   })
 
-  ipcMain.handle('projects:update', async (_event, userId: number, id: number, data: Record<string, unknown>) => {
-    assertUser(userId)
+  ipcMain.handle('projects:update', async (_event, token: string, userId: number, id: number, data: Record<string, unknown>) => {
+    assertUser(token, userId)
     const allowed = ['project_name', 'customer_id', 'site_address', 'description', 'start_date', 'expected_end_date', 'contract_value', 'notes']
     const sets: string[] = []; const vals: unknown[] = []
     for (const key of allowed) {
@@ -103,8 +103,8 @@ function registerProjectCRUD() {
     return true
   })
 
-  ipcMain.handle('projects:updateStatus', async (_event, userId: number, id: number, status: string) => {
-    assertUser(userId)
+  ipcMain.handle('projects:updateStatus', async (_event, token: string, userId: number, id: number, status: string) => {
+    assertUser(token, userId)
     const valid = ['quotation', 'approved', 'in_progress', 'completed', 'on_hold', 'cancelled']
     if (!valid.includes(status)) throw new Error(`Invalid status: ${status}`)
     const now = status === 'completed' ? ', actual_end_date = ?' : ''
@@ -123,11 +123,11 @@ function registerProjectCRUD() {
 // MATERIAL ISSUANCE / RETURNS
 // =====================================================================
 function registerMaterialHandlers() {
-  ipcMain.handle('projects:issueMaterial', async (_event, userId: number, data: {
+  ipcMain.handle('projects:issueMaterial', async (_event, token: string, userId: number, data: {
     project_id: number; item_id: number; warehouse_id: number; quantity: number
     date: string; issued_to?: string; notes?: string; override_low_stock?: boolean
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const stock = getDb().prepare(
         'SELECT quantity_on_hand, average_cost FROM item_stock WHERE item_id = ? AND warehouse_id = ?'
@@ -159,10 +159,10 @@ function registerMaterialHandlers() {
     })
   })
 
-  ipcMain.handle('projects:returnMaterial', async (_event, userId: number, data: {
+  ipcMain.handle('projects:returnMaterial', async (_event, token: string, userId: number, data: {
     project_id: number; item_id: number; warehouse_id: number; quantity: number; date: string; notes?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       recordStockMovement(
         data.item_id, data.warehouse_id, 'project_return',
@@ -179,7 +179,7 @@ function registerMaterialHandlers() {
     })
   })
 
-  ipcMain.handle('projects:getMaterials', async (_event, _userId: number, projectId: number) => {
+  ipcMain.handle('projects:getMaterials', async (_event, token: string, _userId: number, projectId: number) => {
     const issued = getDb().prepare(`
       SELECT pmi.*, i.name as item_name, i.item_code, u.short_code as unit_short_code, w.name as warehouse_name
       FROM project_materials_issued pmi
@@ -212,11 +212,11 @@ function registerMaterialHandlers() {
 // LABOR COSTS
 // =====================================================================
 function registerLaborHandlers() {
-  ipcMain.handle('projects:addLaborCost', async (_event, userId: number, data: {
+  ipcMain.handle('projects:addLaborCost', async (_event, token: string, userId: number, data: {
     project_id: number; employee_id?: number; date: string
     hours_worked?: number; rate_per_hour?: number; daily_wage_amount?: number; description?: string
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     const dailyWage = data.daily_wage_amount ?? (data.hours_worked && data.rate_per_hour ? round2(data.hours_worked * data.rate_per_hour) : 0)
     const result = getDb().prepare(`
       INSERT INTO project_labor_costs (project_id, employee_id, date, hours_worked, rate_per_hour, daily_wage_amount, description, created_by)
@@ -230,7 +230,7 @@ function registerLaborHandlers() {
     return { id: Number(result.lastInsertRowid) }
   })
 
-  ipcMain.handle('projects:getLaborCosts', async (_event, _userId: number, projectId: number) => {
+  ipcMain.handle('projects:getLaborCosts', async (_event, token: string, _userId: number, projectId: number) => {
     const rows = getDb().prepare(`
       SELECT plc.*, e.full_name as employee_name
       FROM project_labor_costs plc
@@ -247,11 +247,11 @@ function registerLaborHandlers() {
 // OTHER EXPENSES
 // =====================================================================
 function registerExpenseHandlers() {
-  ipcMain.handle('projects:addExpense', async (_event, userId: number, data: {
+  ipcMain.handle('projects:addExpense', async (_event, token: string, userId: number, data: {
     project_id: number; expense_category: string; description?: string; amount: number; date: string
     paid_via?: string; bank_account_id?: number
   }) => {
-    assertUser(userId)
+    assertUser(token, userId)
     return runTransaction(() => {
       const result = getDb().prepare(`
         INSERT INTO project_other_expenses (project_id, expense_category, description, amount, date, paid_via, bank_account_id, created_by)
@@ -265,19 +265,14 @@ function registerExpenseHandlers() {
       // If paid via cash/bank, record transaction and journal entry
       if (data.paid_via === 'cash' || data.paid_via === 'bank') {
         const accountType = data.paid_via === 'cash' ? 'cash' : 'bank'
+        if (accountType === 'bank' && !data.bank_account_id) {
+          throw new Error('Bank account is required for bank payments')
+        }
         const accountId = data.bank_account_id
-          ? data.bank_account_id
-          : (getDb().prepare('SELECT id FROM cash_accounts WHERE is_active = 1 LIMIT 1').get() as { id: number } | undefined)?.id
+          ?? (getDb().prepare('SELECT id FROM cash_accounts WHERE is_active = 1 LIMIT 1').get() as { id: number } | undefined)?.id
 
         if (accountId) {
-          getDb().prepare(`
-            INSERT INTO cash_bank_transactions (account_type, account_id, date, transaction_type, amount, reference_type, reference_id, description, balance_after, created_by)
-            VALUES (?, ?, ?, 'payment', ?, 'project_expense', ?, ?, ?, ?)
-          `).run(accountType, accountId, data.date, -data.amount, expenseId, data.description ?? '', -data.amount, userId)
-
-          if (data.paid_via === 'cash') {
-            getDb().prepare('UPDATE cash_accounts SET current_balance = current_balance - ? WHERE id = ?').run(data.amount, accountId)
-          }
+          recordCashBankTransaction(accountType, accountId, data.date, 'payment', data.amount, 'project_expense', expenseId, data.description ?? data.expense_category, userId)
         }
 
         // Journal entry: Dr Project Expense, Cr Cash/Bank
@@ -305,7 +300,7 @@ function registerExpenseHandlers() {
     })
   })
 
-  ipcMain.handle('projects:getExpenses', async (_event, _userId: number, projectId: number) => {
+  ipcMain.handle('projects:getExpenses', async (_event, token: string, _userId: number, projectId: number) => {
     const rows = getDb().prepare(`
       SELECT * FROM project_other_expenses WHERE project_id = ? ORDER BY date DESC, created_at DESC
     `).all(projectId)
@@ -318,7 +313,7 @@ function registerExpenseHandlers() {
 // PROFITABILITY
 // =====================================================================
 function registerProfitabilityHandlers() {
-  ipcMain.handle('projects:profitability', async (_event, _userId: number, projectId: number) => {
+  ipcMain.handle('projects:profitability', async (_event, token: string, _userId: number, projectId: number) => {
     // Revenue from sales invoices (total_before_tax = tax-exclusive amount)
     const revenueRow = getDb().prepare(
       "SELECT COALESCE(SUM(total_before_tax), 0) as rev FROM sales_invoices WHERE project_id = ? AND is_voided = 0"
@@ -367,7 +362,7 @@ function registerProfitabilityHandlers() {
     }
   })
 
-  ipcMain.handle('projects:summary', async (_event, _userId: number) => {
+  ipcMain.handle('projects:summary', async (_event, token: string, _userId: number) => {
     const active = getDb().prepare(
       "SELECT COUNT(*) as c FROM projects WHERE status IN ('approved', 'in_progress')"
     ).get() as { c: number }

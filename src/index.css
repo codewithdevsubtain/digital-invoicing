@@ -34,4 +34,56 @@
   .sidebar-link-active {
     @apply bg-navy-800 text-white;
   }
+
+  /* Dark sidebar scrollbar */
+  .scrollbar-sidebar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+  .scrollbar-sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-sidebar::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.18);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .scrollbar-sidebar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.32);
+  }
+  .scrollbar-sidebar::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Light main content scrollbar */
+  .scrollbar-main {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  }
+  .scrollbar-main::-webkit-scrollbar {
+    width: 8px;
+  }
+  .scrollbar-main::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-main::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .scrollbar-main::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(100, 116, 139, 0.65);
+  }
+  .scrollbar-main::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
 }

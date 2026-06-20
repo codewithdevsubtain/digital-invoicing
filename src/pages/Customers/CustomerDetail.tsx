@@ -39,6 +39,7 @@ export default function CustomerDetail() {
   const [loading, setLoading] = useState(false)
 
   const customerId = Number(id)
+  const invalidId = !id || Number.isNaN(customerId)
   const activeTab = (searchParams.get('tab') as TabKey) || 'profile'
 
   const load = async () => {
@@ -59,8 +60,15 @@ export default function CustomerDetail() {
   }
 
   useEffect(() => {
+    if (invalidId) return
     load()
-  }, [user, customerId])
+  }, [user, customerId, invalidId])
+
+  if (invalidId) {
+    return (
+      <div className="p-6 text-gray-500">Customer not found.</div>
+    )
+  }
 
   const setTab = (tab: TabKey) => {
     setSearchParams({ tab })

@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Factory, Lock, User, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore.js'
+import { isElectronAvailable } from '../../lib/api.js'
 import Loading from '../../components/Loading.js'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { user, loading, error, login, loadSession, clearError, forcePasswordChange } = useAuthStore()
+  const { user, loading, error, login, clearError, forcePasswordChange } = useAuthStore()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
@@ -15,10 +16,18 @@ export default function Login() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [changeError, setChangeError] = useState<string | null>(null)
+  const [electronReady, setElectronReady] = useState(isElectronAvailable())
 
   useEffect(() => {
-    loadSession()
-  }, [loadSession])
+    if (electronReady) return
+    const timer = window.setInterval(() => {
+      if (isElectronAvailable()) {
+        setElectronReady(true)
+        window.clearInterval(timer)
+      }
+    }, 250)
+    return () => window.clearInterval(timer)
+  }, [electronReady])
 
   useEffect(() => {
     if (user) {
@@ -56,7 +65,7 @@ export default function Login() {
   }
 
   if (loading && !showChangePassword) {
-    return <Loading fullScreen text="Starting HVAC ERP..." />
+    return <Loading fullScreen text="Signing in..." />
   }
 
   return (
@@ -126,6 +135,11 @@ export default function Login() {
           </form>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {!electronReady && (
+              <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                Waiting for the desktop app to connect. Please use the HVAC ERP window from <strong>npm run dev</strong>, not a browser tab at localhost:5173.
+              </div>
+            )}
             {error && (
               <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
                 <AlertCircle size={16} />
@@ -170,10 +184,10 @@ export default function Login() {
                 Remember me
               </label>
             </div>
-            <button type="submit" disabled={loading} className="btn-primary w-full">
+            <button type="submit" disabled={loading || !electronReady} className="btn-primary w-full">
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
-            <p className="text-center text-xs text-gray-400">Default: admin / admin123</p>
+            {/* <p className="text-center text-xs text-gray-400">Default: admin / admin123</p> */}
           </form>
         )}
       </div>

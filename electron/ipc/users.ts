@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import bcrypt from 'bcryptjs'
 import { getDb, logActivity } from '../database/db.js'
+import { validateSessionToken } from './auth.js'
 
 interface User {
   id: number
@@ -26,7 +27,9 @@ interface ActivityLog {
   full_name?: string
 }
 
-function assertAdmin(userId: number) {
+function assertAdmin(token: string, userId: number) {
+  const sessionUserId = validateSessionToken(token)
+  if (sessionUserId !== userId) throw new Error('Unauthorized')
   const user = getDb().prepare('SELECT role FROM users WHERE id = ?').get(userId) as
     | { role: string }
     | undefined
@@ -45,10 +48,11 @@ export function registerUserHandlers() {
     'activityLog:list',
     async (
       _event,
+      token: string,
       userId: number,
       filters: { userId?: number; module?: string; from?: string; to?: string; limit?: number } = {}
     ) => {
-      assertAdmin(userId)
+      assertAdmin(token, userId)
       const where: string[] = []
       const values: unknown[] = []
 
@@ -82,24 +86,24 @@ export function registerUserHandlers() {
     }
   )
 
-  ipcMain.handle('users:list', async (_event, userId: number) => {
-    assertAdmin(userId)
+  ipcMain.handle('users:list', async (_event, token: string, userId: number) => {
+    assertAdmin(token, userId)
     const rows = getDb()
       .prepare('SELECT * FROM users ORDER BY created_at DESC')
       .all() as User[]
     return rows.map(toSafeUser)
   })
 
-  ipcMain.handle('users:get', async (_event, userId: number, id: number) => {
-    assertAdmin(userId)
+  ipcMain.handle('users:get', async (_event, token: string, userId: number, id: number) => {
+    assertAdmin(token, userId)
     const row = getDb().prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined
     return row ? toSafeUser(row) : null
   })
 
   ipcMain.handle(
     'users:create',
-    async (_event, userId: number, data: { username: string; password: string; full_name: string; role: string }) => {
-      assertAdmin(userId)
+    async (_event, token: string, userId: number, data: { username: string; password: string; full_name: string; role: string }) => {
+      assertAdmin(token, userId)
       const hash = bcrypt.hashSync(data.password, 10)
       const result = getDb()
         .prepare(
@@ -116,11 +120,12 @@ export function registerUserHandlers() {
     'users:update',
     async (
       _event,
+      token: string,
       userId: number,
       id: number,
       data: { full_name?: string; role?: string; is_active?: number }
     ) => {
-      assertAdmin(userId)
+      assertAdmin(token, userId)
       if (userId === id && data.is_active === 0) {
         throw new Error('You cannot deactivate your own account')
       }
@@ -143,8 +148,8 @@ export function registerUserHandlers() {
     }
   )
 
-  ipcMain.handle('users:deactivate', async (_event, userId: number, id: number) => {
-    assertAdmin(userId)
+  ipcMain.handle('users:deactivate', async (_event, token: string, userId: number, id: number) => {
+    assertAdmin(token, userId)
     if (userId === id) {
       throw new Error('You cannot deactivate your own account')
     }
@@ -157,8 +162,8 @@ export function registerUserHandlers() {
 
   ipcMain.handle(
     'users:resetPassword',
-    async (_event, userId: number, id: number, newPassword: string) => {
-      assertAdmin(userId)
+    async (_event, token: string, userId: number, id: number, newPassword: string) => {
+      assertAdmin(token, userId)
       const hash = bcrypt.hashSync(newPassword, 10)
       getDb()
         .prepare(

@@ -8,11 +8,51 @@ declare global {
   }
 }
 
-async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
-  if (!window.electronAPI) {
-    throw new Error('Electron API not available')
+const TOKEN_KEY = 'hvac_erp_token'
+const REMEMBER_KEY = 'hvac_erp_remember'
+const SESSION_TOKEN_KEY = 'hvac_erp_session_token'
+
+const PUBLIC_CHANNELS = new Set(['auth:login', 'settings:get'])
+const TOKEN_PROVIDED_CHANNELS = new Set(['auth:getCurrentUser', 'auth:logout', 'auth:changePassword'])
+const IPC_TIMEOUT_MS = 15000
+
+function getStoredAuthToken(): string | null {
+  const remember = localStorage.getItem(REMEMBER_KEY)
+  if (remember === 'true') {
+    return localStorage.getItem(TOKEN_KEY)
   }
-  return window.electronAPI.invoke(channel, ...args) as Promise<T>
+  return sessionStorage.getItem(SESSION_TOKEN_KEY)
+}
+
+export function isElectronAvailable(): boolean {
+  return typeof window !== 'undefined' && !!window.electronAPI
+}
+
+async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  if (!window.electronAPI?.invoke) {
+    throw new Error(
+      'Electron API not available. Please use the HVAC ERP desktop window opened by "npm run dev", not a browser tab.'
+    )
+  }
+
+  const request = PUBLIC_CHANNELS.has(channel) || TOKEN_PROVIDED_CHANNELS.has(channel)
+    ? window.electronAPI.invoke(channel, ...args)
+    : (() => {
+        const token = getStoredAuthToken()
+        if (!token) throw new Error('Not authenticated')
+        return window.electronAPI.invoke(channel, token, ...args)
+      })()
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`Request timed out: ${channel}`)), IPC_TIMEOUT_MS)
+  })
+
+  try {
+    return await Promise.race([request, timeout]) as T
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
 }
 
 export const api = {
@@ -26,8 +66,11 @@ export const api = {
       ),
     getCurrentUser: (token: string) => invoke<Omit<User, 'password_hash'> | null>('auth:getCurrentUser', token),
     logout: (token: string) => invoke<boolean>('auth:logout', token),
-    changePassword: (userId: number, oldPassword: string, newPassword: string) =>
-      invoke<boolean>('auth:changePassword', userId, oldPassword, newPassword),
+    changePassword: (userId: number, oldPassword: string, newPassword: string) => {
+      const token = getStoredAuthToken()
+      if (!token) throw new Error('Not authenticated')
+      return invoke<boolean>('auth:changePassword', token, userId, oldPassword, newPassword)
+    },
   },
   users: {
     list: (userId: number) => invoke<Omit<User, 'password_hash'>[]>('users:list', userId),
@@ -482,5 +525,12 @@ export const api = {
       invoke<any>('reports:dashboard', userId, data),
     exportCSV: (userId: number, data: { defaultName: string; headers: string[]; rows: string[][] }) =>
       invoke<boolean>('reports:exportCSV', userId, data),
+  },
+  app: {
+    backup: (userId: number) => invoke<{ success: boolean; path?: string; error?: string }>('app:backup', userId),
+    restore: (userId: number, confirmed: boolean) =>
+      invoke<{ success: boolean; error?: string }>('app:restore', userId, confirmed),
+    settingsPath: (userId: number) =>
+      invoke<{ userData: string; backups: string; version: string }>('app:settingsPath', userId),
   },
 }

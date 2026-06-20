@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Plus, ChevronDown, LogOut, UserCircle } from 'lucide-react'
 import { useSettingsStore } from '../store/settingsStore.js'
 import { useAuthStore } from '../store/authStore.js'
@@ -9,6 +10,7 @@ export default function TopBar() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const { settings, loadSettings } = useSettingsStore()
   const { user, logout } = useAuthStore()
+  const navigate = useNavigate()
 
   useEffect(() => {
     loadSettings()
@@ -21,13 +23,13 @@ export default function TopBar() {
     setCurrentDate(formatter.format(new Date()))
   }, [loadSettings])
 
-  const quickActions = [
-    'New Invoice',
-    'New Purchase',
-    'New Expense',
-    'New Project',
-    'New Vendor',
-    'New Customer',
+  const quickActions: Array<{ label: string; path: string }> = [
+    { label: 'New Invoice', path: '/invoices' },
+    { label: 'New Purchase', path: '/purchases' },
+    { label: 'New Expense', path: '/expenses' },
+    { label: 'New Project', path: '/projects' },
+    { label: 'New Vendor', path: '/vendors' },
+    { label: 'New Customer', path: '/customers' },
   ]
 
   const handleLogout = async () => {
@@ -57,11 +59,11 @@ export default function TopBar() {
             <div className="absolute right-0 z-50 mt-2 w-48 rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5">
               {quickActions.map((action) => (
                 <button
-                  key={action}
-                  onClick={() => setShowDropdown(false)}
+                  key={action.label}
+                  onClick={() => { setShowDropdown(false); navigate(action.path) }}
                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
                 >
-                  {action}
+                  {action.label}
                 </button>
               ))}
             </div>

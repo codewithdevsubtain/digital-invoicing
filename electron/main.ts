@@ -4,6 +4,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { initDatabase, getDb } from './database/db.js'
 import { registerAuthHandlers } from './ipc/auth.js'
+import { assertAdmin } from './ipc/guard.js'
 import { registerUserHandlers } from './ipc/users.js'
 import { registerSettingsHandlers } from './ipc/settings.js'
 import { registerVendorHandlers } from './ipc/vendors.js'
@@ -35,7 +36,7 @@ function createWindow() {
     minHeight: 640,
     title: 'HVAC ERP',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -55,6 +56,10 @@ function createWindow() {
     mainWindow?.show()
   })
 
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error('Preload failed to load:', preloadPath, error)
+  })
+
   // Update title with company name
   try {
     const setting = getDb().prepare("SELECT value FROM settings WHERE key = 'company_name'").get() as { value: string } | undefined
@@ -68,7 +73,8 @@ function createWindow() {
 
 // Backup / Restore handlers
 function registerBackupHandlers() {
-  ipcMain.handle('app:backup', async () => {
+  ipcMain.handle('app:backup', async (_event, token: string, userId: number) => {
+    assertAdmin(token, userId)
     const dbPath = path.join(app.getPath('userData'), 'database', 'hvac-erp.db')
     const result = await dialog.showSaveDialog(mainWindow!, {
       title: 'Backup Database',
@@ -84,7 +90,8 @@ function registerBackupHandlers() {
     }
   })
 
-  ipcMain.handle('app:restore', async (_event, confirmed: boolean) => {
+  ipcMain.handle('app:restore', async (_event, token: string, userId: number, confirmed: boolean) => {
+    assertAdmin(token, userId)
     if (!confirmed) return { success: false, error: 'Please confirm' }
     const dbPath = path.join(app.getPath('userData'), 'database', 'hvac-erp.db')
     const result = await dialog.showOpenDialog(mainWindow!, {
@@ -105,7 +112,8 @@ function registerBackupHandlers() {
     }
   })
 
-  ipcMain.handle('app:settingsPath', async () => {
+  ipcMain.handle('app:settingsPath', async (_event, token: string, userId: number) => {
+    assertAdmin(token, userId)
     const backupsDir = path.join(app.getPath('userData'), 'backups')
     if (!fs.existsSync(backupsDir)) fs.mkdirSync(backupsDir, { recursive: true })
     return { userData: app.getPath('userData'), backups: backupsDir, version: app.getVersion() }

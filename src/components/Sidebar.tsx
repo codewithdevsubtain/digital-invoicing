@@ -45,8 +45,8 @@ export default function Sidebar() {
   const navItems = allNavItems.filter((item) => hasAccess(role, item.route))
 
   return (
-    <aside className="flex w-64 flex-col bg-navy-900 text-white">
-      <div className="flex h-16 items-center border-b border-navy-800 px-6">
+    <aside className="flex h-full min-h-0 w-64 shrink-0 flex-col bg-navy-900 text-white">
+      <div className="flex h-16 shrink-0 items-center border-b border-navy-800 px-6">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded bg-white text-navy-900">
             <Factory size={18} />
@@ -54,7 +54,7 @@ export default function Sidebar() {
           <span className="text-lg font-bold tracking-tight">HVAC ERP</span>
         </div>
       </div>
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
+      <nav className="scrollbar-sidebar flex-1 overflow-y-auto overscroll-contain px-3 py-4">
         <ul className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon
@@ -75,7 +75,7 @@ export default function Sidebar() {
           })}
         </ul>
       </nav>
-      <div className="border-t border-navy-800 p-4 text-xs text-gray-400">
+      <div className="shrink-0 border-t border-navy-800 p-4 text-xs text-gray-400">
         Offline Desktop ERP
       </div>
     </aside>

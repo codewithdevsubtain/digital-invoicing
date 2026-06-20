@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { getDb, logActivity } from '../database/db.js'
+import { assertAuth } from './guard.js'
 
 interface Vendor {
   id: number
@@ -31,9 +32,8 @@ interface VendorLedger {
   created_at: string
 }
 
-function assertUser(userId: number) {
-  const user = getDb().prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: number } | undefined
-  if (!user) throw new Error('Invalid user')
+function assertUser(token: string, userId: number) {
+  assertAuth(token, userId)
 }
 
 function generateVendorCode(): string {
@@ -69,10 +69,11 @@ export function registerVendorHandlers() {
     'vendors:list',
     async (
       _event,
+      token: string,
       userId: number,
       filters: { search?: string; isActive?: boolean | null } = {}
     ) => {
-      assertUser(userId)
+      assertUser(token, userId)
       const where: string[] = []
       const values: unknown[] = []
 
@@ -98,8 +99,8 @@ export function registerVendorHandlers() {
     }
   )
 
-  ipcMain.handle('vendors:get', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('vendors:get', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const row = getDb().prepare('SELECT * FROM vendors WHERE id = ?').get(id) as Vendor | undefined
     if (!row) return null
     const balance = getDb()
@@ -112,6 +113,7 @@ export function registerVendorHandlers() {
     'vendors:create',
     async (
       _event,
+      token: string,
       userId: number,
       data: {
         name: string
@@ -125,7 +127,7 @@ export function registerVendorHandlers() {
         is_active?: number
       }
     ) => {
-      assertUser(userId)
+      assertUser(token, userId)
       const code = generateVendorCode()
       const openingBalance = Number(data.opening_balance ?? 0)
       const openingType = data.opening_balance_type ?? 'credit'
@@ -160,6 +162,7 @@ export function registerVendorHandlers() {
     'vendors:update',
     async (
       _event,
+      token: string,
       userId: number,
       id: number,
       data: {
@@ -174,7 +177,7 @@ export function registerVendorHandlers() {
         is_active?: number
       }
     ) => {
-      assertUser(userId)
+      assertUser(token, userId)
       const sets: string[] = []
       const values: unknown[] = []
 
@@ -214,8 +217,8 @@ export function registerVendorHandlers() {
     }
   )
 
-  ipcMain.handle('vendors:toggleActive', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('vendors:toggleActive', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const vendor = getDb().prepare('SELECT is_active, name FROM vendors WHERE id = ?').get(id) as
       | { is_active: number; name: string }
       | undefined
@@ -231,11 +234,12 @@ export function registerVendorHandlers() {
     'vendors:ledger',
     async (
       _event,
+      token: string,
       userId: number,
       id: number,
       filters: { dateFrom?: string; dateTo?: string } = {}
     ) => {
-      assertUser(userId)
+      assertUser(token, userId)
       const where: string[] = ['vl.vendor_id = ?']
       const values: unknown[] = [id]
 
@@ -262,16 +266,16 @@ export function registerVendorHandlers() {
     }
   )
 
-  ipcMain.handle('vendors:balance', async (_event, userId: number, id: number) => {
-    assertUser(userId)
+  ipcMain.handle('vendors:balance', async (_event, token: string, userId: number, id: number) => {
+    assertUser(token, userId)
     const row = getDb()
       .prepare('SELECT COALESCE(SUM(debit - credit), 0) AS balance FROM vendor_ledger WHERE vendor_id = ?')
       .get(id) as { balance: number }
     return row.balance
   })
 
-  ipcMain.handle('vendors:summary', async (_event, userId: number) => {
-    assertUser(userId)
+  ipcMain.handle('vendors:summary', async (_event, token: string, userId: number) => {
+    assertUser(token, userId)
     const rows = getDb()
       .prepare(
         `

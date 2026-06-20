@@ -1,6 +1,6 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
-import { useAuthStore } from './store/authStore.js'
+import { useAuthStore, hasAccess, routeKeyFromPath } from './store/authStore.js'
 import Layout from './components/Layout.js'
 import Login from './pages/Login/Login.js'
 import Dashboard from './pages/Dashboard/Dashboard.js'
@@ -23,20 +23,25 @@ import CashBank from './pages/Accounting/CashBank.js'
 import Accounting from './pages/Accounting/Accounting.js'
 import Reports from './pages/Reports/Reports.js'
 import Settings from './pages/Settings/Settings.js'
+import Loading from './components/Loading.js'
+
+function RoleGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuthStore()
+  const location = useLocation()
+  const routeKey = routeKeyFromPath(location.pathname)
+
+  if (!user) return <Navigate to="/login" replace />
+  if (!hasAccess(user.role, routeKey)) {
+    return <Navigate to="/" replace />
+  }
+  return <>{children}</>
+}
 
 function ProtectedLayout() {
-  const { user, loading, forcePasswordChange, loadSession } = useAuthStore()
+  const { user, sessionChecked, forcePasswordChange } = useAuthStore()
 
-  useEffect(() => {
-    loadSession()
-  }, [loadSession])
-
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-gray-500">Loading session...</p>
-      </div>
-    )
+  if (!sessionChecked) {
+    return <Loading fullScreen text="Loading session..." />
   }
 
   if (!user || forcePasswordChange) {
@@ -47,14 +52,10 @@ function ProtectedLayout() {
 }
 
 function AuthGate() {
-  const { user, loading, forcePasswordChange } = useAuthStore()
+  const { user, sessionChecked, forcePasswordChange } = useAuthStore()
 
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-gray-500">Loading session...</p>
-      </div>
-    )
+  if (!sessionChecked) {
+    return <Loading fullScreen text="Loading session..." />
   }
 
   if (user && !forcePasswordChange) {
@@ -65,30 +66,36 @@ function AuthGate() {
 }
 
 function App() {
+  const loadSession = useAuthStore((s) => s.loadSession)
+
+  useEffect(() => {
+    loadSession()
+  }, [loadSession])
+
   return (
     <Routes>
       <Route path="/login" element={<AuthGate />} />
       <Route path="/" element={<ProtectedLayout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="vendors" element={<Vendors />} />
-        <Route path="vendors/:id/ledger" element={<VendorLedger />} />
-        <Route path="customers" element={<Customers />} />
-        <Route path="customers/:id" element={<CustomerDetail />} />
-        <Route path="customers/:id/ledger" element={<CustomerLedger />} />
-        <Route path="raw-materials" element={<RawMaterials />} />
-        <Route path="finished-goods" element={<FinishedGoods />} />
-        <Route path="purchases" element={<Purchases />} />
-        <Route path="fabrication" element={<Fabrication />} />
-        <Route path="stock-movements" element={<StockMovements />} />
-        <Route path="projects" element={<Projects />} />
-        <Route path="projects/:id" element={<ProjectDetail />} />
-        <Route path="invoices" element={<Invoices />} />
-        <Route path="expenses" element={<Expenses />} />
-        <Route path="hr-payroll" element={<HRPayroll />} />
-        <Route path="cash-bank" element={<CashBank />} />
-        <Route path="accounting" element={<Accounting />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="settings" element={<Settings />} />
+        <Route index element={<RoleGuard><Dashboard /></RoleGuard>} />
+        <Route path="vendors" element={<RoleGuard><Vendors /></RoleGuard>} />
+        <Route path="vendors/:id/ledger" element={<RoleGuard><VendorLedger /></RoleGuard>} />
+        <Route path="customers" element={<RoleGuard><Customers /></RoleGuard>} />
+        <Route path="customers/:id" element={<RoleGuard><CustomerDetail /></RoleGuard>} />
+        <Route path="customers/:id/ledger" element={<RoleGuard><CustomerLedger /></RoleGuard>} />
+        <Route path="raw-materials" element={<RoleGuard><RawMaterials /></RoleGuard>} />
+        <Route path="finished-goods" element={<RoleGuard><FinishedGoods /></RoleGuard>} />
+        <Route path="purchases" element={<RoleGuard><Purchases /></RoleGuard>} />
+        <Route path="fabrication" element={<RoleGuard><Fabrication /></RoleGuard>} />
+        <Route path="stock-movements" element={<RoleGuard><StockMovements /></RoleGuard>} />
+        <Route path="projects" element={<RoleGuard><Projects /></RoleGuard>} />
+        <Route path="projects/:id" element={<RoleGuard><ProjectDetail /></RoleGuard>} />
+        <Route path="invoices" element={<RoleGuard><Invoices /></RoleGuard>} />
+        <Route path="expenses" element={<RoleGuard><Expenses /></RoleGuard>} />
+        <Route path="hr-payroll" element={<RoleGuard><HRPayroll /></RoleGuard>} />
+        <Route path="cash-bank" element={<RoleGuard><CashBank /></RoleGuard>} />
+        <Route path="accounting" element={<RoleGuard><Accounting /></RoleGuard>} />
+        <Route path="reports" element={<RoleGuard><Reports /></RoleGuard>} />
+        <Route path="settings" element={<RoleGuard><Settings /></RoleGuard>} />
       </Route>
     </Routes>
   )

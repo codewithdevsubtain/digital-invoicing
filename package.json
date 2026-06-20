@@ -8,11 +8,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsc --project tsconfig.electron.json && shx cp electron/database/*.sql dist-electron/database/ && concurrently \"npm run vite:dev\" \"npm run electron:dev\"",
+    "dev": "tsc --project tsconfig.electron.json && tsc --project tsconfig.preload.json && shx mv dist-electron/preload.js dist-electron/preload.cjs && shx cp electron/database/*.sql dist-electron/database/ && concurrently \"npm run vite:dev\" \"npm run electron:dev\"",
     "vite:dev": "vite",
     "electron:dev": "wait-on http://localhost:5173 && electron .",
     "build": "npm run compile && npm run vite:build && npm run electron:build",
-    "compile": "tsc --project tsconfig.electron.json && shx cp electron/database/*.sql dist-electron/database/ && tsc --project tsconfig.json",
+    "compile": "tsc --project tsconfig.electron.json && tsc --project tsconfig.preload.json && shx mv dist-electron/preload.js dist-electron/preload.cjs && shx cp electron/database/*.sql dist-electron/database/ && tsc --project tsconfig.json",
     "rebuild": "electron-builder install-app-deps",
     "postinstall": "electron-builder install-app-deps",
     "vite:build": "vite build",
@@ -51,6 +51,7 @@
   "build": {
     "appId": "com.hvacerp.app",
     "productName": "HVAC ERP",
+    "forceCodeSigning": false,
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -64,13 +65,11 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
+      "allowToChangeInstallationDirectory": true
     }
   }
 }
