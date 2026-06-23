@@ -34,7 +34,7 @@ export default function TopBar() {
 
   const handleLogout = async () => {
     await logout()
-    window.location.href = '/login'
+    navigate('/login')
   }
 
   return (
