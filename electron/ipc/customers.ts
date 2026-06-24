@@ -246,7 +246,7 @@ export function registerCustomerHandlers() {
       token: string,
       userId: number,
       id: number,
-      filters: { dateFrom?: string; dateTo?: string } = {}
+      filters: { dateFrom?: string; dateTo?: string; project_id?: number } = {}
     ) => {
       assertUser(token, userId)
       const where: string[] = ['cl.customer_id = ?']
@@ -260,20 +260,37 @@ export function registerCustomerHandlers() {
         where.push('cl.date <= ?')
         values.push(filters.dateTo)
       }
+      if (filters.project_id) {
+        // Include invoice entries where the linked sales_invoice belongs to this project
+        // Also include receipt entries where the receipt references an invoice of this project
+        where.push(`(
+          (cl.reference_type = 'sales_invoice' AND cl.reference_id IN (SELECT id FROM sales_invoices WHERE project_id = ?))
+          OR
+          (cl.reference_type = 'customer_receipt' AND cl.reference_id IN (
+            SELECT cr.id FROM customer_receipts cr
+            JOIN sales_invoices si ON cr.sales_invoice_id = si.id
+            WHERE si.project_id = ?
+          ))
+        )`)
+        values.push(filters.project_id, filters.project_id)
+      }
 
       const sql = `
         SELECT cl.*,
           COALESCE(si.invoice_number, cr.receipt_number) AS reference_no,
+          si.project_id,
+          p.project_name,
           SUM(cl.debit - cl.credit) OVER (ORDER BY cl.date, cl.id) AS running_balance
         FROM customer_ledger cl
         LEFT JOIN sales_invoices si ON cl.reference_type = 'sales_invoice' AND cl.reference_id = si.id
         LEFT JOIN customer_receipts cr ON cl.reference_type = 'customer_receipt' AND cl.reference_id = cr.id
+        LEFT JOIN projects p ON si.project_id = p.id
         WHERE ${where.join(' AND ')}
         ORDER BY cl.date, cl.id
       `
-      return getDb().prepare(sql).all(...values) as (CustomerLedger & { running_balance: number })[]
-    }
+      return getDb().prepare(sql).all(...values) as (CustomerLedger & { running_balance: number })[]}
   )
+
 
   ipcMain.handle('customers:balance', async (_event, token: string, userId: number, id: number) => {
     assertUser(token, userId)

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Plus, Search, Eye, DollarSign, Ban, Printer, Receipt as ReceiptIcon, List, X } from 'lucide-react'
+import { Plus, Eye, DollarSign, Ban, Printer, Receipt as ReceiptIcon, List, X, Filter } from 'lucide-react'
 import { api } from '../../lib/api.js'
 import { useAuthStore } from '../../store/authStore.js'
 import { useToastStore } from '../../store/toastStore.js'
@@ -31,7 +31,8 @@ export default function Invoices() {
   // List
   const [items, setItems] = useState<SalesInvoiceRow[]>([])
   const [loading, setLoading] = useState(false)
-  const [filters, setFilters] = useState({ payment_status: '', date_from: '', date_to: '' })
+  const [filters, setFilters] = useState({ payment_status: '', date_from: '', date_to: '', customer_id: '' as string | number, project_id: '' as string | number })
+  const [filterProjects, setFilterProjects] = useState<Array<{ value: string | number; label: string }>>([])  // projects for filter dropdown
   const [customers, setCustomers] = useState<Array<{ value: string | number; label: string }>>([])
 
   // New invoice form
@@ -69,6 +70,8 @@ export default function Invoices() {
         ...(filters.payment_status ? { payment_status: filters.payment_status } : {}),
         ...(filters.date_from ? { date_from: filters.date_from } : {}),
         ...(filters.date_to ? { date_to: filters.date_to } : {}),
+        ...(filters.customer_id ? { customer_id: Number(filters.customer_id) } : {}),
+        ...(filters.project_id ? { project_id: Number(filters.project_id) } : {}),
       })
       setItems(list)
       const totalInv = list.reduce((s: number, i: any) => s + i.grand_total, 0)
@@ -89,12 +92,14 @@ export default function Invoices() {
   const loadRefs = useCallback(async () => {
     if (!user) return
     try {
-      const [c, i] = await Promise.all([
+      const [c, i, allProjects] = await Promise.all([
         api.customers.list(user.id, { isActive: true }),
         api.inventory.listItems(user.id),
+        api.projects.list(user.id),
       ])
       setCustomers(c.map((x) => ({ value: x.id, label: `${x.name}${x.company_name ? ` (${x.company_name})` : ''}` })))
       setItemsOpt(i.map((x) => ({ value: x.id, label: `${x.item_code ?? ''} - ${x.name}` })))
+      setFilterProjects(allProjects.map((p) => ({ value: p.id, label: `${p.project_name}${p.project_code ? ` (${p.project_code})` : ''}` })))
     } catch { /* ignore */ }
   }, [user])
 
@@ -295,18 +300,47 @@ export default function Invoices() {
               <div className="card p-3"><p className="text-xs text-gray-500">Total Outstanding</p><p className="text-lg font-bold text-orange-600">{formatCurrency(summary.total_outstanding)}</p></div>
               <div className="card p-3"><p className="text-xs text-gray-500">Invoices</p><p className="text-lg font-bold">{items.length}</p></div>
             </div>
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="mb-4 space-y-2">
+              {/* Filter row */}
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex items-center gap-1 text-xs text-gray-500 font-medium">
+                  <Filter size={13} /> Filters:
+                </div>
+                <SearchableSelect
+                  options={customers}
+                  value={filters.customer_id}
+                  onChange={(v) => {
+                    // Reset project filter when customer changes
+                    setFilters({ ...filters, customer_id: v, project_id: '' })
+                  }}
+                  placeholder="All Customers"
+                />
+                <SearchableSelect
+                  options={filterProjects}
+                  value={filters.project_id}
+                  onChange={(v) => setFilters({ ...filters, project_id: v })}
+                  placeholder="All Projects"
+                />
                 <select value={filters.payment_status} onChange={(e) => setFilters({ ...filters, payment_status: e.target.value })} className="input-field w-36 text-sm">
                   <option value="">All Status</option>
                   <option value="unpaid">Unpaid</option>
                   <option value="partial">Partial</option>
                   <option value="paid">Paid</option>
                 </select>
-                <input type="date" value={filters.date_from} onChange={(e) => setFilters({ ...filters, date_from: e.target.value })} className="input-field text-sm w-36" />
-                <input type="date" value={filters.date_to} onChange={(e) => setFilters({ ...filters, date_to: e.target.value })} className="input-field text-sm w-36" />
+                <input type="date" value={filters.date_from} onChange={(e) => setFilters({ ...filters, date_from: e.target.value })} className="input-field text-sm w-36" placeholder="From" />
+                <input type="date" value={filters.date_to} onChange={(e) => setFilters({ ...filters, date_to: e.target.value })} className="input-field text-sm w-36" placeholder="To" />
+                {(filters.customer_id || filters.project_id || filters.payment_status || filters.date_from || filters.date_to) && (
+                  <button
+                    onClick={() => setFilters({ payment_status: '', date_from: '', date_to: '', customer_id: '', project_id: '' })}
+                    className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-100 hover:text-red-500 border border-gray-200"
+                  >
+                    <X size={12} /> Clear
+                  </button>
+                )}
+                <div className="ml-auto">
+                  <button onClick={() => { setHeader({ ...header, date: new Date().toISOString().split('T')[0] }); setLines([{ ...emptyLine, gst_percent: String(defaultGst) }]); setSelProjectMaterials([]); setShowNew(true) }} className="btn-primary gap-2"><Plus size={16} /> New Invoice</button>
+                </div>
               </div>
-              <button onClick={() => { setHeader({ ...header, date: new Date().toISOString().split('T')[0] }); setLines([{ ...emptyLine, gst_percent: String(defaultGst) }]); setSelProjectMaterials([]); setShowNew(true) }} className="btn-primary gap-2"><Plus size={16} /> New Invoice</button>
             </div>
 
             <DataTable

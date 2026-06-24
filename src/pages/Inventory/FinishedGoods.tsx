@@ -365,7 +365,7 @@ export default function FinishedGoods() {
                             <td className="py-2 pr-3 text-red-600">{!isIn ? m.quantity : '-'}</td>
                             <td className="py-2 pr-3">{formatCurrency(m.unit_cost)}</td>
                             <td className="py-2 pr-3 font-medium">{m.running_balance}</td>
-                            <td className="py-2 text-xs text-gray-500">{m.reference_type ? `${m.reference_type} #${m.reference_id}` : '-'}</td>
+                            <td className="py-2 text-xs text-gray-500">{(m as any).reference_name ? String((m as any).reference_name) : (m.reference_type ? `${m.reference_type.replace(/_/g, ' ')} #${m.reference_id}` : '-')}</td>
                           </tr>
                         )
                       })}

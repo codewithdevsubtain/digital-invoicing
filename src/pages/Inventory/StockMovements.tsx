@@ -124,7 +124,7 @@ export default function StockMovements() {
             { key: 'quantity', header: 'Qty', render: (r) => r.quantity.toFixed(2) },
             { key: 'unit_cost', header: 'Unit Cost', render: (r) => formatCurrency(r.unit_cost) },
             { key: 'total_value', header: 'Total', render: (r) => formatCurrency(r.total_value) },
-            { key: 'reference_type', header: 'Reference', render: (r) => r.reference_type ? `${r.reference_type} #${r.reference_id}` : '-' },
+            { key: 'reference_name', header: 'Reference', render: (r) => r.reference_name ? String(r.reference_name) : (r.reference_type ? `${String(r.reference_type).replace(/_/g, ' ')} #${r.reference_id}` : '-') },
             { key: 'notes', header: 'Notes', render: (r) => r.notes ?? '-' },
           ]}
         />

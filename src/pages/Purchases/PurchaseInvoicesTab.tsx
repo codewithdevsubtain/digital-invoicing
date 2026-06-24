@@ -53,7 +53,7 @@ export default function PurchaseInvoicesTab() {
   const [payTarget, setPayTarget] = useState<PurchaseInvoiceRow | null>(null)
   const [payForm, setPayForm] = useState({
     vendor_id: '' as string | number, date: new Date().toISOString().split('T')[0],
-    amount: '', payment_method: 'bank_transfer', bank_account_id: '' as string | number, reference_no: '', notes: '',
+    payment_method: 'bank_transfer', bank_account_id: '' as string | number, reference_no: '', notes: '',
   })
   const [outstandingInvs, setOutstandingInvs] = useState<OutstandingInvoice[]>([])
   const [allocations, setAllocations] = useState<Record<number, string>>({})
@@ -196,8 +196,8 @@ export default function PurchaseInvoicesTab() {
       try {
         const outstanding = await api.purchases.pi.getOutstanding(user.id, inv.vendor_id)
         setOutstandingInvs(outstanding)
-        const bal = inv.total_amount - inv.amount_paid
-        setPayForm((p) => ({ ...p, amount: String(bal), vendor_id: inv.vendor_id }))
+        // Pre-fill only the current invoice's balance as default allocation
+        const bal = round2(inv.total_amount - inv.amount_paid)
         setAllocations({ [inv.id]: String(bal) })
       } catch { addToast({ type: 'error', title: 'Error', message: 'Failed to load outstanding invoices' }) }
     }
@@ -205,28 +205,28 @@ export default function PurchaseInvoicesTab() {
 
   const handlePayment = async () => {
     if (!user) return
-    const amt = Number(payForm.amount)
-    if (!payForm.vendor_id || !payForm.date || !amt || amt <= 0) {
-      addToast({ type: 'warning', title: 'Validation', message: 'Vendor, date, and valid amount are required' })
-      return
-    }
     const allocs = Object.entries(allocations)
       .filter(([_, a]) => Number(a) > 0)
-      .map(([invId, a]) => ({ purchase_invoice_id: Number(invId), amount: Number(a) }))
+      .map(([invId, a]) => ({ purchase_invoice_id: Number(invId), amount: round2(Number(a)) }))
     if (allocs.length === 0) {
       addToast({ type: 'warning', title: 'Validation', message: 'Allocate payment to at least one invoice' })
       return
     }
+    const totalAmt = round2(allocs.reduce((s, a) => s + a.amount, 0))
+    if (!payForm.vendor_id || !payForm.date || totalAmt <= 0) {
+      addToast({ type: 'warning', title: 'Validation', message: 'Vendor, date, and valid allocation amounts are required' })
+      return
+    }
     try {
       const r = await api.purchases.payment.record(user.id, {
-        vendor_id: Number(payForm.vendor_id), date: payForm.date, amount: amt,
+        vendor_id: Number(payForm.vendor_id), date: payForm.date, amount: totalAmt,
         payment_method: payForm.payment_method,
         bank_account_id: payForm.bank_account_id ? Number(payForm.bank_account_id) : undefined,
         reference_no: payForm.reference_no || undefined,
         notes: payForm.notes || undefined,
         allocations: allocs,
       })
-      addToast({ type: 'success', title: 'Payment Recorded', message: `Payment ${r.payment_number} recorded` })
+      addToast({ type: 'success', title: 'Payment Recorded', message: `Payment ${r.payment_number} of ${formatCurrency(totalAmt)} recorded` })
       setPayTarget(null); load()
     } catch (err) {
       addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed' })
@@ -239,8 +239,8 @@ export default function PurchaseInvoicesTab() {
     const n = [...lines]; n[i] = { ...n[i], [f]: v }; setLines(n)
   }
 
-  const totalAllocated = Object.values(allocations).reduce((s, a) => s + (Number(a) || 0), 0)
-  const balDue = Number(payForm.amount) - totalAllocated
+  const totalAllocated = round2(Object.values(allocations).reduce((s, a) => s + (Number(a) || 0), 0))
+  const totalOutstanding = round2(outstandingInvs.reduce((s, inv) => s + inv.balance_due, 0))
 
   return (
     <div>
@@ -463,34 +463,72 @@ export default function PurchaseInvoicesTab() {
 
         {/* Outstanding invoices */}
         <div className="border-t pt-4">
-          <p className="text-sm font-medium text-gray-700 mb-2">Allocate Payment</p>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-700">Allocate Payment to Invoices</p>
+            <span className="text-xs text-gray-400">Enter partial or full amount per invoice</span>
+          </div>
           {outstandingInvs.length === 0 ? (
             <p className="text-xs text-gray-400">No outstanding invoices for this vendor.</p>
           ) : (
-            <table className="min-w-full text-xs">
-              <thead><tr className="border-b text-left text-gray-500"><th className="py-1 pr-2">Invoice</th><th className="py-1 pr-2">Date</th><th className="py-1 pr-2">Total</th><th className="py-1 pr-2">Due</th><th className="py-1">Amount</th></tr></thead>
-              <tbody>
-                {outstandingInvs.map((inv) => (
-                  <tr key={inv.id} className="border-b border-gray-50">
-                    <td className="py-1 pr-2 font-mono">{inv.invoice_number}</td>
-                    <td className="py-1 pr-2">{formatDate(inv.date)}</td>
-                    <td className="py-1 pr-2">{formatCurrency(inv.total_amount)}</td>
-                    <td className="py-1 pr-2 font-medium">{formatCurrency(inv.balance_due)}</td>
-                    <td className="py-1">
-                      <input type="number" step="0.01" min="0" max={inv.balance_due}
-                        value={allocations[inv.id] ?? ''}
-                        onChange={(e) => setAllocations({ ...allocations, [inv.id]: e.target.value })}
-                        className="input-field text-xs w-24" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead><tr className="border-b text-left text-gray-500"><th className="py-1 pr-2">Invoice</th><th className="py-1 pr-2">Date</th><th className="py-1 pr-2">Total</th><th className="py-1 pr-2">Balance Due</th><th className="py-1 pr-2">Pay This</th><th className="py-1"></th></tr></thead>
+                <tbody>
+                  {outstandingInvs.map((inv) => {
+                    const allocated = Number(allocations[inv.id] || 0)
+                    const isFullyPaying = Math.abs(allocated - inv.balance_due) < 0.01 && allocated > 0
+                    return (
+                      <tr key={inv.id} className={`border-b border-gray-50 ${allocated > 0 ? 'bg-green-50' : ''}`}>
+                        <td className="py-1.5 pr-2 font-mono font-medium">{inv.invoice_number}</td>
+                        <td className="py-1.5 pr-2">{formatDate(inv.date)}</td>
+                        <td className="py-1.5 pr-2">{formatCurrency(inv.total_amount)}</td>
+                        <td className="py-1.5 pr-2 font-medium text-orange-600">{formatCurrency(inv.balance_due)}</td>
+                        <td className="py-1.5 pr-2">
+                          <input type="number" step="0.01" min="0" max={inv.balance_due}
+                            value={allocations[inv.id] ?? ''}
+                            onChange={(e) => setAllocations({ ...allocations, [inv.id]: e.target.value })}
+                            className="input-field text-xs w-28" placeholder="0.00" />
+                        </td>
+                        <td className="py-1.5">
+                          {isFullyPaying ? (
+                            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700 font-medium">Full</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setAllocations({ ...allocations, [inv.id]: String(inv.balance_due) })}
+                              className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-100 font-medium"
+                            >Fill Max</button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
-          <div className="mt-2 flex justify-between text-sm font-medium">
-            <span>Total Payment: <input type="number" step="0.01" min="0" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} className="input-field text-sm w-28 inline" /></span>
-            <span className={balDue < -0.01 ? 'text-red-600' : 'text-gray-600'}>Allocated: {formatCurrency(totalAllocated)} {balDue < -0.01 ? `(overshoot ${formatCurrency(Math.abs(balDue))})` : ''}</span>
+
+          {/* Summary bar */}
+          <div className="mt-3 rounded-lg border bg-gray-50 p-3 space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Total Outstanding (this vendor):</span>
+              <span className="font-medium text-orange-600">{formatCurrency(totalOutstanding)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">This Payment Amount:</span>
+              <span className="font-bold text-gray-900">{formatCurrency(totalAllocated)}</span>
+            </div>
+            {totalOutstanding - totalAllocated > 0.01 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">Remaining after this payment:</span>
+                <span className="text-orange-500">{formatCurrency(totalOutstanding - totalAllocated)}</span>
+              </div>
+            )}
           </div>
+
+          {totalAllocated <= 0 && (
+            <p className="mt-2 text-xs text-red-500">⚠ Please enter an amount to allocate to at least one invoice.</p>
+          )}
         </div>
       </FormModal>
     </div>

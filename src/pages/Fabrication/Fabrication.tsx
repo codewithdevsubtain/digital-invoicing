@@ -18,19 +18,18 @@ export default function Fabrication() {
     <div>
       <PageHeader title="Fabrication" subtitle="BOM recipes and fabrication order management" />
 
-      <div className="mt-6 border-b border-gray-200">
-        <nav className="-mb-px flex gap-6">
+      <div className="mt-6 border-b border-gray-200 overflow-x-auto">
+        <nav className="-mb-px flex gap-6 min-w-max">
           {tabs.map((tab) => {
             const Icon = tab.icon
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition ${
-                  activeTab === tab.id
-                    ? 'border-navy-800 text-navy-800'
-                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                }`}
+                className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition ${activeTab === tab.id
+                  ? 'border-navy-800 text-navy-800'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  }`}
               >
                 <Icon size={18} />
                 {tab.label}

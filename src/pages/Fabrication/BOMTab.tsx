@@ -202,19 +202,21 @@ export default function BOMTab() {
             <span className="text-sm font-medium text-gray-700">Raw Material Components</span>
             <button onClick={addLine} className="btn-secondary !py-1 !px-2 text-xs gap-1"><Plus size={12} /> Add Component</button>
           </div>
-          <table className="min-w-full text-sm">
-            <thead><tr className="border-b text-left text-xs text-gray-500"><th className="py-1 pr-2 w-1/2">Raw Material</th><th className="py-1 pr-2 w-20">Qty Required</th><th className="py-1 pr-2 w-16">Wastage %</th><th className="w-6"></th></tr></thead>
-            <tbody>
-              {lines.map((l, i) => (
-                <tr key={i} className="border-b border-gray-50">
-                  <td className="py-1 pr-2"><SearchableSelect options={rmItems} value={l.raw_material_item_id} onChange={(v) => updLine(i, 'raw_material_item_id', v)} placeholder="Select raw material" /></td>
-                  <td className="py-1 pr-2"><input type="number" step="0.01" min="0" value={l.quantity_required} onChange={(e) => updLine(i, 'quantity_required', e.target.value)} className="input-field text-xs w-full" /></td>
-                  <td className="py-1 pr-2"><input type="number" step="0.01" min="0" value={l.wastage_percent} onChange={(e) => updLine(i, 'wastage_percent', e.target.value)} className="input-field text-xs w-full" /></td>
-                  <td className="py-1">{lines.length > 1 && <button onClick={() => removeLine(i)} className="text-gray-300 hover:text-red-500"><X size={14} /></button>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead><tr className="border-b text-left text-xs text-gray-500"><th className="py-1 pr-2 w-1/2">Raw Material</th><th className="py-1 pr-2 w-20">Qty Required</th><th className="py-1 pr-2 w-16">Wastage %</th><th className="w-6"></th></tr></thead>
+              <tbody>
+                {lines.map((l, i) => (
+                  <tr key={i} className="border-b border-gray-50">
+                    <td className="py-1 pr-2"><SearchableSelect options={rmItems} value={l.raw_material_item_id} onChange={(v) => updLine(i, 'raw_material_item_id', v)} placeholder="Select raw material" /></td>
+                    <td className="py-1 pr-2"><input type="number" step="0.01" min="0" value={l.quantity_required} onChange={(e) => updLine(i, 'quantity_required', e.target.value)} className="input-field text-xs w-full" /></td>
+                    <td className="py-1 pr-2"><input type="number" step="0.01" min="0" value={l.wastage_percent} onChange={(e) => updLine(i, 'wastage_percent', e.target.value)} className="input-field text-xs w-full" /></td>
+                    <td className="py-1">{lines.length > 1 && <button onClick={() => removeLine(i)} className="text-gray-300 hover:text-red-500"><X size={14} /></button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Cost Estimate */}

@@ -350,11 +350,13 @@ export const api = {
     getExpenses: (userId: number, projectId: number) =>
       invoke<{ rows: any[]; total: number }>('projects:getExpenses', userId, projectId),
 
-    // Profitability
+    // Profitability & Ledger
     profitability: (userId: number, projectId: number) =>
       invoke<ProjectProfitability>('projects:profitability', userId, projectId),
     summary: (userId: number) =>
       invoke<{ active_projects: number; total_contract_value: number; total_revenue_invoiced: number }>('projects:summary', userId),
+    ledger: (userId: number, projectId: number) =>
+      invoke<Array<{ date: string; type: string; description: string; debit: number; credit: number; running_balance: number; created_at: string }>>('projects:ledger', userId, projectId),
   },
   sales: {
     list: (userId: number, filters?: { customer_id?: number; project_id?: number; payment_status?: string; date_from?: string; date_to?: string }) =>

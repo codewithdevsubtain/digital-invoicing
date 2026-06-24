@@ -130,10 +130,15 @@ function registerSalesInvoiceHandlers() {
       }
 
       // 3. Customer ledger entry (debit = increases receivable)
+      const prevBalRow = getDb().prepare(
+        'SELECT COALESCE(SUM(debit - credit), 0) as balance FROM customer_ledger WHERE customer_id = ?'
+      ).get(data.customer_id) as { balance: number }
+      const newBal = prevBalRow.balance + grandTotal
+
       getDb().prepare(`
         INSERT INTO customer_ledger (customer_id, date, transaction_type, reference_id, reference_type, debit, credit, balance_after, description)
         VALUES (?, ?, 'invoice', ?, 'sales_invoice', ?, 0, ?, ?)
-      `).run(data.customer_id, data.date, invId, grandTotal, grandTotal, `Invoice ${invNumber}`)
+      `).run(data.customer_id, data.date, invId, grandTotal, newBal, `Invoice ${invNumber}`)
 
       // 4. Journal entry
       const arId = getCoaId('1200')    // Accounts Receivable
@@ -211,10 +216,15 @@ function registerSalesInvoiceHandlers() {
 
       // Reverse customer ledger entry
       const grandTotal = inv.grand_total as number
+      const prevBalRow = getDb().prepare(
+        'SELECT COALESCE(SUM(debit - credit), 0) as balance FROM customer_ledger WHERE customer_id = ?'
+      ).get(inv.customer_id) as { balance: number }
+      const newBal = prevBalRow.balance - grandTotal
+
       getDb().prepare(`
         INSERT INTO customer_ledger (customer_id, date, transaction_type, reference_id, reference_type, debit, credit, balance_after, description)
         VALUES (?, ?, 'credit_note', ?, 'sales_invoice_void', 0, ?, ?, ?)
-      `).run(inv.customer_id, new Date().toISOString().split('T')[0], id, grandTotal, -grandTotal, `Void of ${inv.invoice_number} - ${reason}`)
+      `).run(inv.customer_id, new Date().toISOString().split('T')[0], id, grandTotal, newBal, `Void of ${inv.invoice_number} - ${reason}`)
 
       // Reverse journal
       const oldJe = getDb().prepare(
@@ -298,10 +308,15 @@ function registerReceiptHandlers() {
       `).run(newReceived, newBalance, newStatus, data.sales_invoice_id)
 
       // 3. Customer ledger (credit = reduces receivable by total settled)
+      const prevBalRow = getDb().prepare(
+        'SELECT COALESCE(SUM(debit - credit), 0) as balance FROM customer_ledger WHERE customer_id = ?'
+      ).get(data.customer_id) as { balance: number }
+      const newBal = prevBalRow.balance - totalSettled
+
       getDb().prepare(`
         INSERT INTO customer_ledger (customer_id, date, transaction_type, reference_id, reference_type, debit, credit, balance_after, description)
         VALUES (?, ?, 'receipt', ?, 'customer_receipt', 0, ?, ?, ?)
-      `).run(data.customer_id, data.date, receiptId, totalSettled, -totalSettled, `Receipt ${receiptNumber}`)
+      `).run(data.customer_id, data.date, receiptId, totalSettled, newBal, `Receipt ${receiptNumber}`)
 
       // 4. Cash/bank transaction + journal entry
       const jeResult = getDb().prepare(`

@@ -9,6 +9,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsc --project tsconfig.electron.json && tsc --project tsconfig.preload.json && shx mv dist-electron/preload.js dist-electron/preload.cjs && shx cp electron/database/*.sql dist-electron/database/ && concurrently \"npm run vite:dev\" \"npm run electron:dev\"",
+    "db:reset": "node scripts/reset-db.js",
     "vite:dev": "vite",
     "electron:dev": "wait-on http://localhost:5173 && electron .",
     "build": "npm run compile && npm run vite:build && npm run electron:build",

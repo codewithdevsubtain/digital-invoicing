@@ -239,12 +239,16 @@ function registerPurchaseInvoiceHandlers() {
       }
 
       // 3. Insert vendor ledger entry
-      // Purchase: debit (increase what we owe)
+      const prevBalRow = getDb().prepare(
+        'SELECT COALESCE(SUM(debit - credit), 0) as balance FROM vendor_ledger WHERE vendor_id = ?'
+      ).get(data.vendor_id) as { balance: number }
+      const newBal = prevBalRow.balance - totalAmount
+
       getDb().prepare(`
         INSERT INTO vendor_ledger (vendor_id, date, transaction_type, reference_id, reference_type, debit, credit, balance_after, description)
         VALUES (?, ?, 'purchase', ?, 'purchase_invoice', 0, ?, ?, ?)
       `).run(
-        data.vendor_id, data.date, invId, totalAmount, -totalAmount,
+        data.vendor_id, data.date, invId, totalAmount, newBal,
         `Purchase inv ${invNumber}`
       )
 
@@ -352,12 +356,17 @@ function registerPurchaseInvoiceHandlers() {
 
       // Reverse vendor ledger
       const totalAmount = inv.total_amount as number
+      const prevBalRow = getDb().prepare(
+        'SELECT COALESCE(SUM(debit - credit), 0) as balance FROM vendor_ledger WHERE vendor_id = ?'
+      ).get(inv.vendor_id) as { balance: number }
+      const newBal = prevBalRow.balance + totalAmount
+
       getDb().prepare(`
         INSERT INTO vendor_ledger (vendor_id, date, transaction_type, reference_id, reference_type, debit, credit, balance_after, description)
         VALUES (?, ?, 'debit_note', ?, 'purchase_invoice_void', ?, 0, ?, ?)
       `).run(
         inv.vendor_id, new Date().toISOString().split('T')[0], id,
-        totalAmount, totalAmount,
+        totalAmount, newBal,
         `Void of ${inv.invoice_number} - ${reason}`
       )
 
@@ -408,9 +417,23 @@ function registerPaymentHandlers() {
     assertUser(token, userId)
     return runTransaction(() => {
       const payNumber = generateNumber('VPAY', 'vendor_payments', 'payment_number')
-      const totalAllocated = data.allocations.reduce((s, a) => s + a.amount, 0)
-      if (Math.abs(totalAllocated - data.amount) > 0.01) {
-        throw new Error(`Allocated amount (${totalAllocated}) must equal payment amount (${data.amount})`)
+      const totalAllocated = round2(data.allocations.reduce((s, a) => s + a.amount, 0))
+
+      // Validate: total allocated cannot exceed payment amount
+      if (totalAllocated - data.amount > 0.01) {
+        throw new Error(`Allocated amount (${totalAllocated}) exceeds payment amount (${data.amount})`)
+      }
+
+      // Validate: each allocation must not exceed the invoice's outstanding balance
+      for (const alloc of data.allocations) {
+        const inv = getDb().prepare('SELECT total_amount, amount_paid FROM purchase_invoices WHERE id = ?').get(alloc.purchase_invoice_id) as {
+          total_amount: number; amount_paid: number
+        } | undefined
+        if (!inv) throw new Error(`Invoice #${alloc.purchase_invoice_id} not found`)
+        const balanceDue = round2(inv.total_amount - inv.amount_paid)
+        if (alloc.amount - balanceDue > 0.01) {
+          throw new Error(`Allocation of ${alloc.amount} exceeds balance due (${balanceDue}) for invoice #${alloc.purchase_invoice_id}`)
+        }
       }
 
       // 1. Insert payment
@@ -446,11 +469,16 @@ function registerPaymentHandlers() {
       }
 
       // 4. Vendor ledger entry (debit = reduction in payables)
+      const prevBalRow = getDb().prepare(
+        'SELECT COALESCE(SUM(debit - credit), 0) as balance FROM vendor_ledger WHERE vendor_id = ?'
+      ).get(data.vendor_id) as { balance: number }
+      const newBal = prevBalRow.balance + data.amount
+
       getDb().prepare(`
         INSERT INTO vendor_ledger (vendor_id, date, transaction_type, reference_id, reference_type, debit, credit, balance_after, description)
         VALUES (?, ?, 'payment', ?, 'vendor_payment', ?, 0, ?, ?)
       `).run(
-        data.vendor_id, data.date, payId, data.amount, data.amount,
+        data.vendor_id, data.date, payId, data.amount, newBal,
         `Payment ${payNumber}`
       )
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Package, Users, Receipt, FileText, BarChart3, Plus, Undo2, ArrowUpDown, Printer } from 'lucide-react'
+import { ArrowLeft, Package, Users, Receipt, FileText, BarChart3, Plus, Undo2, ArrowUpDown, Printer, List } from 'lucide-react'
 import { api } from '../../lib/api.js'
 import { useAuthStore } from '../../store/authStore.js'
 import { useToastStore } from '../../store/toastStore.js'
@@ -14,7 +14,7 @@ import SearchableSelect from '../../components/SearchableSelect.js'
 import StatusBadge from '../../components/StatusBadge.js'
 import type { Project, ProjectMaterialIssuedRow, ProjectMaterialReturnRow, ProjectLaborRow, ProjectProfitability } from '../../lib/types.js'
 
-type DetailTab = 'overview' | 'materials' | 'labor' | 'expenses' | 'pnl'
+type DetailTab = 'overview' | 'materials' | 'labor' | 'expenses' | 'pnl' | 'ledger'
 
 const tabs: { id: DetailTab; label: string; icon: any }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
@@ -22,6 +22,7 @@ const tabs: { id: DetailTab; label: string; icon: any }[] = [
   { id: 'labor', label: 'Labor', icon: Users },
   { id: 'expenses', label: 'Expenses', icon: Receipt },
   { id: 'pnl', label: 'Profit & Loss', icon: FileText },
+  { id: 'ledger', label: 'Project Ledger', icon: List },
 ]
 
 const expenseCategories = ['Transport', 'Tools & Equipment', 'Site Misc', 'Equipment Rental', 'Labor Camp', 'Food & Board', 'Fuel', 'Safety Equipment', 'Permits', 'Other']
@@ -64,6 +65,9 @@ export default function ProjectDetail() {
 
   // P&L
   const [profitability, setProfitability] = useState<ProjectProfitability | null>(null)
+
+  // Ledger
+  const [ledgerData, setLedgerData] = useState<Array<{ date: string; type: string; description: string; debit: number; credit: number; running_balance: number; created_at: string }> | null>(null)
 
   const loadProject = useCallback(async () => {
     if (!user) return
@@ -113,12 +117,18 @@ export default function ProjectDetail() {
     try { setProfitability(await api.projects.profitability(user.id, projectId)) } catch { /* ignore */ }
   }, [user, projectId])
 
+  const loadLedger = useCallback(async () => {
+    if (!user) return
+    try { setLedgerData(await api.projects.ledger(user.id, projectId)) } catch (err: any) { addToast({ type: 'error', title: 'Ledger Error', message: err?.message || 'Failed to load ledger' }); console.error(err); }
+  }, [user, projectId, addToast])
+
   useEffect(() => {
     if (activeTab === 'materials') loadMaterials()
     if (activeTab === 'labor') loadLabor()
     if (activeTab === 'expenses') loadExpenses()
     if (activeTab === 'pnl' || activeTab === 'overview') loadPnL()
-  }, [activeTab, loadMaterials, loadLabor, loadExpenses, loadPnL])
+    if (activeTab === 'ledger') loadLedger()
+  }, [activeTab, loadMaterials, loadLabor, loadExpenses, loadPnL, loadLedger])
 
   const handleStatusChange = async (newStatus: string) => {
     if (!user || !project) return
@@ -493,6 +503,32 @@ export default function ProjectDetail() {
                 <span>Profit Margin</span>
                 <span className={`font-bold ${profitability.profit_margin_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{profitability.profit_margin_percent}%</span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* LEDGER */}
+        {activeTab === 'ledger' && (
+          <div>
+            <div className="mb-4">
+              <p className="text-sm text-gray-500">Chronological list of all project revenues (credits) and costs (debits).</p>
+            </div>
+            <div className="overflow-x-auto">
+              <DataTable
+                data={ledgerData ?? []}
+                columns={[
+                  { key: 'date', header: 'Date', render: (r) => formatDate(r.date) },
+                  { key: 'type', header: 'Transaction Type' },
+                  { key: 'description', header: 'Description', render: (r) => r.description ?? '-' },
+                  { key: 'debit', header: 'Cost (Dr)', render: (r) => r.debit > 0 ? formatCurrency(r.debit) : '-' },
+                  { key: 'credit', header: 'Revenue (Cr)', render: (r) => r.credit > 0 ? formatCurrency(r.credit) : '-' },
+                  { key: 'running_balance', header: 'Net Cost / (Profit)', render: (r) => (
+                    <span className={r.running_balance > 0 ? 'text-red-600 font-medium' : (r.running_balance < 0 ? 'text-green-600 font-medium' : '')}>
+                      {r.running_balance < 0 ? `(${formatCurrency(Math.abs(r.running_balance))})` : formatCurrency(r.running_balance)}
+                    </span>
+                  )},
+                ]}
+              />
             </div>
           </div>
         )}

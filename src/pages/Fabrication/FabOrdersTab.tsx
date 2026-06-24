@@ -243,22 +243,24 @@ export default function FabOrdersTab() {
         {selectedBomDetail && (
           <div className="border-t pt-4">
             <p className="text-sm font-medium text-gray-700 mb-2">Material Requirements</p>
-            <table className="min-w-full text-xs">
-              <thead><tr className="border-b text-left text-gray-500"><th className="py-1 pr-2">Raw Material</th><th className="py-1 pr-2">Per BOM</th><th className="py-1 pr-2">Scale Factor</th><th className="py-1">Required</th></tr></thead>
-              <tbody>
-                {(() => {
-                  const scale = (Number(form.quantity_to_produce) || 1) / (selectedBomDetail.output_quantity || 1)
-                  return selectedBomDetail.components?.map((c: any) => (
-                    <tr key={c.id} className="border-b border-gray-50">
-                      <td className="py-1 pr-2">{c.raw_material_name}</td>
-                      <td className="py-1 pr-2">{c.quantity_required}</td>
-                      <td className="py-1 pr-2">{scale.toFixed(2)}x</td>
-                      <td className="py-1 font-medium">{(c.quantity_required * scale).toFixed(2)} {c.unit_short_code ?? ''}</td>
-                    </tr>
-                  ))
-                })()}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead><tr className="border-b text-left text-gray-500"><th className="py-1 pr-2">Raw Material</th><th className="py-1 pr-2">Per BOM</th><th className="py-1 pr-2">Scale Factor</th><th className="py-1">Required</th></tr></thead>
+                <tbody>
+                  {(() => {
+                    const scale = (Number(form.quantity_to_produce) || 1) / (selectedBomDetail.output_quantity || 1)
+                    return selectedBomDetail.components?.map((c: any) => (
+                      <tr key={c.id} className="border-b border-gray-50">
+                        <td className="py-1 pr-2">{c.raw_material_name}</td>
+                        <td className="py-1 pr-2">{c.quantity_required}</td>
+                        <td className="py-1 pr-2">{scale.toFixed(2)}x</td>
+                        <td className="py-1 font-medium">{(c.quantity_required * scale).toFixed(2)} {c.unit_short_code ?? ''}</td>
+                      </tr>
+                    ))
+                  })()}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </FormModal>
@@ -287,21 +289,23 @@ export default function FabOrdersTab() {
               {/* Materials */}
               <div className="border-t pt-4">
                 <h4 className="text-sm font-semibold text-gray-700 mb-2">Materials Consumed</h4>
-                <table className="min-w-full text-xs">
-                  <thead><tr className="border-b text-left text-gray-500"><th className="py-1 pr-2">Item</th><th className="py-1 pr-2">Qty Consumed</th><th className="py-1 pr-2">Unit Cost</th><th className="py-1">Total Cost</th></tr></thead>
-                  <tbody>
-                    {viewData.materials?.length === 0 ? (
-                      <tr><td colSpan={4} className="py-2 text-center text-gray-400">No materials recorded</td></tr>
-                    ) : viewData.materials?.map((m: any) => (
-                      <tr key={m.id} className="border-b border-gray-50">
-                        <td className="py-1 pr-2">{m.raw_material_name}</td>
-                        <td className="py-1 pr-2">{m.quantity_consumed}</td>
-                        <td className="py-1 pr-2">{formatCurrency(m.unit_cost)}</td>
-                        <td className="py-1">{formatCurrency(m.total_cost)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-xs">
+                    <thead><tr className="border-b text-left text-gray-500"><th className="py-1 pr-2">Item</th><th className="py-1 pr-2">Qty Consumed</th><th className="py-1 pr-2">Unit Cost</th><th className="py-1">Total Cost</th></tr></thead>
+                    <tbody>
+                      {viewData.materials?.length === 0 ? (
+                        <tr><td colSpan={4} className="py-2 text-center text-gray-400">No materials recorded</td></tr>
+                      ) : viewData.materials?.map((m: any) => (
+                        <tr key={m.id} className="border-b border-gray-50">
+                          <td className="py-1 pr-2">{m.raw_material_name}</td>
+                          <td className="py-1 pr-2">{m.quantity_consumed}</td>
+                          <td className="py-1 pr-2">{formatCurrency(m.unit_cost)}</td>
+                          <td className="py-1">{formatCurrency(m.total_cost)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* Cost summary */}

@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'projects:getExpenses',
       'projects:profitability',
       'projects:summary',
+      'projects:ledger',
       'sales:list',
       'sales:getById',
       'sales:create',

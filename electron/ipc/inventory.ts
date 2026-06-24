@@ -48,7 +48,10 @@ export function recordStockMovement(
     .prepare('SELECT id, quantity_on_hand, average_cost FROM item_stock WHERE item_id = ? AND warehouse_id = ?')
     .get(itemId, warehouseId) as { id: number; quantity_on_hand: number; average_cost: number } | undefined
 
-  if (movementType.endsWith('_in')) {
+  const isIn = movementType.endsWith('_in') || movementType === 'project_return' || movementType === 'opening_stock'
+  const isOut = movementType.endsWith('_out') || movementType === 'project_issue'
+
+  if (isIn) {
     if (existing) {
       const oldQty = existing.quantity_on_hand
       const oldCost = existing.average_cost
@@ -63,7 +66,7 @@ export function recordStockMovement(
         'INSERT INTO item_stock (item_id, warehouse_id, quantity_on_hand, average_cost) VALUES (?, ?, ?, ?)'
       ).run(itemId, warehouseId, quantity, unitCost)
     }
-  } else if (movementType.endsWith('_out')) {
+  } else if (isOut) {
     if (!existing) throw new Error('No stock record found for this item in the selected warehouse')
     db.prepare(
       'UPDATE item_stock SET quantity_on_hand = quantity_on_hand - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
@@ -453,7 +456,15 @@ function registerStockHandlers() {
 
     const movements = getDb()
       .prepare(`
-        SELECT sm.*, w.name as warehouse_name, u.full_name as created_by_name
+        SELECT sm.*, w.name as warehouse_name, u.full_name as created_by_name,
+          CASE sm.reference_type
+            WHEN 'project' THEN (SELECT project_name FROM projects WHERE id = sm.reference_id)
+            WHEN 'fabrication_order' THEN (SELECT fab_order_number FROM fabrication_orders WHERE id = sm.reference_id)
+            WHEN 'fabrication_order_cancel' THEN (SELECT fab_order_number FROM fabrication_orders WHERE id = sm.reference_id)
+            WHEN 'purchase_invoice' THEN (SELECT COALESCE(v.name, pi.invoice_number) FROM purchase_invoices pi LEFT JOIN vendors v ON pi.vendor_id = v.id WHERE pi.id = sm.reference_id)
+            WHEN 'sale' THEN (SELECT invoice_number FROM sales_invoices WHERE id = sm.reference_id)
+            ELSE NULL
+          END as reference_name
         FROM stock_movements sm
         JOIN warehouses w ON sm.warehouse_id = w.id
         LEFT JOIN users u ON sm.created_by = u.id
@@ -549,7 +560,15 @@ function registerStockHandlers() {
     return getDb()
       .prepare(`
         SELECT sm.*, i.item_code, i.name as item_name, w.name as warehouse_name,
-               u.full_name as created_by_name
+               u.full_name as created_by_name,
+          CASE sm.reference_type
+            WHEN 'project' THEN (SELECT project_name FROM projects WHERE id = sm.reference_id)
+            WHEN 'fabrication_order' THEN (SELECT fab_order_number FROM fabrication_orders WHERE id = sm.reference_id)
+            WHEN 'fabrication_order_cancel' THEN (SELECT fab_order_number FROM fabrication_orders WHERE id = sm.reference_id)
+            WHEN 'purchase_invoice' THEN (SELECT COALESCE(v.name, pi.invoice_number) FROM purchase_invoices pi LEFT JOIN vendors v ON pi.vendor_id = v.id WHERE pi.id = sm.reference_id)
+            WHEN 'sale' THEN (SELECT invoice_number FROM sales_invoices WHERE id = sm.reference_id)
+            ELSE NULL
+          END as reference_name
         FROM stock_movements sm
         JOIN items i ON sm.item_id = i.id
         JOIN warehouses w ON sm.warehouse_id = w.id
