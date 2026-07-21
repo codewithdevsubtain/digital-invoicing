@@ -67,7 +67,7 @@ export default function ProjectDetail() {
   const [profitability, setProfitability] = useState<ProjectProfitability | null>(null)
 
   // Ledger
-  const [ledgerData, setLedgerData] = useState<Array<{ date: string; type: string; description: string; debit: number; credit: number; running_balance: number; created_at: string }> | null>(null)
+  const [ledgerData, setLedgerData] = useState<Array<{ id: number | string; date: string; type: string; description: string; debit: number; credit: number; running_balance: number; created_at: string }> | null>(null)
 
   const loadProject = useCallback(async () => {
     if (!user) return
@@ -119,7 +119,13 @@ export default function ProjectDetail() {
 
   const loadLedger = useCallback(async () => {
     if (!user) return
-    try { setLedgerData(await api.projects.ledger(user.id, projectId)) } catch (err: any) { addToast({ type: 'error', title: 'Ledger Error', message: err?.message || 'Failed to load ledger' }); console.error(err); }
+    try {
+      const rows = await api.projects.ledger(user.id, projectId)
+      setLedgerData(rows.map((r, idx) => ({ ...r, id: idx + 1 })))
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Ledger Error', message: err?.message || 'Failed to load ledger' })
+      console.error(err)
+    }
   }, [user, projectId, addToast])
 
   useEffect(() => {

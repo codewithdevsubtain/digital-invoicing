@@ -307,6 +307,7 @@ export default function Invoices() {
                   <Filter size={13} /> Filters:
                 </div>
                 <SearchableSelect
+                  className="w-56"
                   options={customers}
                   value={filters.customer_id}
                   onChange={(v) => {
@@ -316,6 +317,7 @@ export default function Invoices() {
                   placeholder="All Customers"
                 />
                 <SearchableSelect
+                  className="w-52"
                   options={filterProjects}
                   value={filters.project_id}
                   onChange={(v) => setFilters({ ...filters, project_id: v })}

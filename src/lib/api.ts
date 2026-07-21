@@ -173,8 +173,8 @@ export const api = {
       }
     ) => invoke<boolean>('customers:update', userId, id, data),
     toggleActive: (userId: number, id: number) => invoke<{ is_active: number }>('customers:toggleActive', userId, id),
-    ledger: (userId: number, id: number, filters?: { dateFrom?: string; dateTo?: string }) =>
-      invoke<(CustomerLedger & { running_balance: number; reference_no?: string | null })[]>('customers:ledger', userId, id, filters),
+    ledger: (userId: number, id: number, filters?: { dateFrom?: string; dateTo?: string; project_id?: number }) =>
+      invoke<(CustomerLedger & { running_balance: number; reference_no?: string | null; project_name?: string | null })[]>('customers:ledger', userId, id, filters),
     balance: (userId: number, id: number) => invoke<number>('customers:balance', userId, id),
     summary: (userId: number) =>
       invoke<{ totalReceivables: number; customersWithBalance: number; overdueCount: number }>('customers:summary', userId),

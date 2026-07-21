@@ -12,6 +12,7 @@ interface SearchableSelectProps {
   onChange: (value: string | number) => void
   placeholder?: string
   label?: string
+  className?: string
 }
 
 export default function SearchableSelect({
@@ -20,12 +21,13 @@ export default function SearchableSelect({
   onChange,
   placeholder = 'Select...',
   label,
+  className = '',
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
 
-  const selected = options.find((o) => o.value === value)
+  const selected = options.find((o) => String(o.value) === String(value))
   const filtered = options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
 
   useEffect(() => {
@@ -37,20 +39,20 @@ export default function SearchableSelect({
   }, [])
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={`relative ${className}`}>
       {label && <label className="label-text mb-1">{label}</label>}
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="input-field flex items-center justify-between text-left"
+        className="input-field flex items-center justify-between text-left text-sm py-2 w-full"
       >
-        <span className={selected ? 'text-gray-900' : 'text-gray-400'}>
-          {selected ? selected.label : placeholder}
+        <span className={`truncate ${selected && value !== '' ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
+          {selected && value !== '' ? selected.label : placeholder}
         </span>
-        <ChevronDown size={16} />
+        <ChevronDown size={16} className="shrink-0 text-gray-400 ml-1" />
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+        <div className="absolute left-0 z-30 mt-1 min-w-full w-max max-w-sm rounded-md border border-gray-200 bg-white shadow-lg">
           <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
             <Search size={16} className="text-gray-400" />
             <input
@@ -71,7 +73,7 @@ export default function SearchableSelect({
                   setQuery('')
                 }}
                 className={`cursor-pointer px-3 py-2 text-sm hover:bg-gray-100 ${
-                  option.value === value ? 'bg-navy-50 text-navy-800' : 'text-gray-700'
+                  String(option.value) === String(value) ? 'bg-navy-50 text-navy-800 font-semibold' : 'text-gray-700'
                 }`}
               >
                 {option.label}

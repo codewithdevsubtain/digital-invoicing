@@ -4,9 +4,9 @@ import { api } from '../../lib/api.js'
 import { useAuthStore } from '../../store/authStore.js'
 import { useToastStore } from '../../store/toastStore.js'
 import { formatCurrency, formatDate } from '../../lib/format.js'
-import type { Customer, CustomerLedger } from '../../lib/types.js'
+import type { Customer, CustomerLedger, Project } from '../../lib/types.js'
 
-type LedgerRow = CustomerLedger & { running_balance: number; reference_no?: string | null }
+type LedgerRow = CustomerLedger & { running_balance: number; reference_no?: string | null; project_name?: string | null }
 type CustomerWithBalance = Customer & { current_balance: number }
 
 interface CustomerLedgerPanelProps {
@@ -22,11 +22,21 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
   const [entries, setEntries] = useState<LedgerRow[]>([])
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [projectId, setProjectId] = useState<number | ''>('')
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (passedCustomer) setCustomer(passedCustomer)
   }, [passedCustomer])
+
+  // Load projects for this customer
+  useEffect(() => {
+    if (!user || !customerId) return
+    api.customers.projects(user.id, customerId)
+      .then((p) => setProjects(p ?? []))
+      .catch(() => {})
+  }, [user, customerId])
 
   const load = async () => {
     if (!user || !customerId) return
@@ -34,7 +44,11 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
     try {
       const [c, ledger] = await Promise.all([
         passedCustomer ? Promise.resolve(passedCustomer) : api.customers.get(user.id, customerId),
-        api.customers.ledger(user.id, customerId, { dateFrom, dateTo }),
+        api.customers.ledger(user.id, customerId, {
+          dateFrom,
+          dateTo,
+          ...(projectId ? { project_id: Number(projectId) } : {}),
+        }),
       ])
       setCustomer(c)
       setEntries(ledger)
@@ -47,16 +61,17 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
 
   useEffect(() => {
     load()
-  }, [user, customerId, dateFrom, dateTo, passedCustomer])
+  }, [user, customerId, dateFrom, dateTo, projectId, passedCustomer])
 
   const exportCSV = () => {
     if (!customer) return
     const rows = [
-      ['Date', 'Description', 'Reference', 'Debit', 'Credit', 'Running Balance'],
+      ['Date', 'Description', 'Reference', 'Project', 'Debit', 'Credit', 'Running Balance'],
       ...entries.map((e) => [
         e.date,
         e.description ?? '',
         e.reference_no ?? '',
+        e.project_name ?? '',
         String(e.debit),
         String(e.credit),
         String(e.running_balance),
@@ -74,6 +89,7 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
 
   const printStatement = () => {
     if (!customer) return
+    const selectedProject = projectId ? projects.find((p) => p.id === Number(projectId)) : null
     const html = `
       <!DOCTYPE html>
       <html>
@@ -96,6 +112,7 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
           ${customer.company_name ? `Company: ${customer.company_name}<br/>` : ''}
           ${customer.contact_person ? `Contact: ${customer.contact_person}<br/>` : ''}
           ${customer.phone ? `Phone: ${customer.phone}<br/>` : ''}
+          ${selectedProject ? `Project: ${selectedProject.project_name}<br/>` : ''}
           Current Balance: <strong>${formatCurrency(customer.current_balance)}</strong>
         </div>
         <table>
@@ -104,6 +121,7 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
               <th>Date</th>
               <th>Description</th>
               <th>Reference</th>
+              <th>Project</th>
               <th class="right">Debit</th>
               <th class="right">Credit</th>
               <th class="right">Balance</th>
@@ -117,6 +135,7 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
                 <td>${formatDate(e.date)}</td>
                 <td>${e.description ?? ''}</td>
                 <td>${e.reference_no ?? ''}</td>
+                <td>${e.project_name ?? ''}</td>
                 <td class="right">${e.debit ? formatCurrency(e.debit) : ''}</td>
                 <td class="right">${e.credit ? formatCurrency(e.credit) : ''}</td>
                 <td class="right">${formatCurrency(e.running_balance)}</td>
@@ -160,7 +179,24 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
           </label>
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input-field" />
         </div>
-        <button onClick={() => { setDateFrom(''); setDateTo('') }} className="btn-secondary">
+        {projects.length > 0 && (
+          <div>
+            <label className="label-text mb-1">Project</label>
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : '')}
+              className="input-field"
+            >
+              <option value="">All Projects</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.project_code ? `${p.project_code} - ` : ''}{p.project_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <button onClick={() => { setDateFrom(''); setDateTo(''); setProjectId('') }} className="btn-secondary">
           Clear
         </button>
         <div className="flex-1" />
@@ -175,45 +211,50 @@ export default function CustomerLedgerPanel({ customerId, customer: passedCustom
       </div>
 
       <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Date</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Description</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Reference</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Debit</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Credit</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Balance</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
-            {entries.length === 0 ? (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
-                  {loading ? 'Loading...' : 'No ledger entries found.'}
-                </td>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Date</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Description</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Reference</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Project</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Debit</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Credit</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Balance</th>
               </tr>
-            ) : (
-              entries.map((e) => (
-                <tr key={e.id} className="hover:bg-gray-50">
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{formatDate(e.date)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{e.description ?? '-'}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{e.reference_no ?? '-'}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-700">
-                    {e.debit ? formatCurrency(e.debit) : '-'}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-700">
-                    {e.credit ? formatCurrency(e.credit) : '-'}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">
-                    {formatCurrency(e.running_balance)}
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {entries.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
+                    {loading ? 'Loading...' : 'No ledger entries found.'}
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                entries.map((e) => (
+                  <tr key={e.id} className="hover:bg-gray-50">
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{formatDate(e.date)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{e.description ?? '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{e.reference_no ?? '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">{e.project_name ?? '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-700">
+                      {e.debit ? formatCurrency(e.debit) : '-'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-700">
+                      {e.credit ? formatCurrency(e.credit) : '-'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">
+                      {formatCurrency(e.running_balance)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
 }
+

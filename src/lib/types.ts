@@ -245,6 +245,7 @@ export interface StockMovementWithBalance extends StockMovement {
   warehouse_name: string
   created_by_name: string | null
   running_balance: number
+  reference_name?: string | null
 }
 
 export interface LowStockItem {
@@ -264,6 +265,7 @@ export interface StockMovementRow extends StockMovement {
   item_name: string
   warehouse_name: string
   created_by_name: string | null
+  reference_name?: string | null
 }
 
 // =====================================================================
